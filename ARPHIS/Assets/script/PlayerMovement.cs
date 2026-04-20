@@ -1,42 +1,46 @@
 using UnityEngine;
 
-public class playermovement : MonoBehaviour
+public class PlayerMovement : MonoBehaviour
 {
     public CharacterController controller;
-    public Animator anim;
+    public Joystick joystick; 
+    public Transform camTransform; 
+    public Animator anim; // Added for your animations
 
     public float speed = 5f;
     public float rotationSpeed = 10f;
     public float gravity = -9.81f;
-
     private Vector3 velocity;
 
     void Update()
     {
-        // 1. Get WASD or Arrow Key Input
-        float x = Input.GetAxis("Horizontal");
-        float z = Input.GetAxis("Vertical");
-        Vector3 move = new Vector3(x, 0, z).normalized;
+        // Added anim to the null check so the console stays clean
+        if (joystick == null || controller == null || camTransform == null || anim == null) return;
 
-        if (move.magnitude >= 0.1f)
+        float x = joystick.Horizontal;
+        float z = joystick.Vertical;
+
+        Vector3 forward = camTransform.forward;
+        Vector3 right = camTransform.right;
+        forward.y = 0; right.y = 0;
+
+        Vector3 moveDirection = forward.normalized * z + right.normalized * x;
+
+        if (moveDirection.magnitude >= 0.1f)
         {
-            // 2. Rotate to face movement direction
-            float targetAngle = Mathf.Atan2(move.x, move.z) * Mathf.Rad2Deg;
-            Quaternion rotation = Quaternion.Euler(0f, targetAngle, 0f);
-            transform.rotation = Quaternion.Slerp(transform.rotation, rotation, Time.deltaTime * rotationSpeed);
-
-            // 3. Move forward
-            controller.Move(move * speed * Time.deltaTime);
-
-            // 4. Update Animator parameter
+            // ADDED: This triggers your Walking animation state
             anim.SetBool("isWalking", true);
+
+            float targetAngle = Mathf.Atan2(moveDirection.x, moveDirection.z) * Mathf.Rad2Deg;
+            transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.Euler(0, targetAngle, 0), Time.deltaTime * rotationSpeed);
+            controller.Move(moveDirection * speed * Time.deltaTime);
         }
-        else
+        else 
         {
+            // ADDED: This returns your character to the Idle state
             anim.SetBool("isWalking", false);
         }
 
-        // 5. Apply Gravity so you stay on the ground
         if (controller.isGrounded && velocity.y < 0) velocity.y = -2f;
         velocity.y += gravity * Time.deltaTime;
         controller.Move(velocity * Time.deltaTime);
