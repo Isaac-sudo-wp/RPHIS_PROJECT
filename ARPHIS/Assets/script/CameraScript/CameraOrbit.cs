@@ -8,7 +8,7 @@ public class CameraOrbit : MonoBehaviour
     public float verticalLimit = 80f;
     
     [Tooltip("The lowest angle the camera can look down. Setting this close to 0 prevents looking under the map plane void.")]
-    public float minimumVerticalAngle = -5f; // ADJUST THIS to completely block looking under the sidewalk!
+    public float minimumVerticalAngle = -5f; 
     
     [Header("Pause Settings")]
     public GameObject pausePanel;
@@ -52,42 +52,41 @@ public class CameraOrbit : MonoBehaviour
         transform.position = player.position;
         if (isPaused) return;
 
-        // Handle camera rotation with touch (Android)
+        // FIXED: Multi-touch loop scan handles moving and panning at the same time safely
         if (Input.touchCount > 0)
         {
             for (int i = 0; i < Input.touchCount; i++)
             {
                 Touch touch = Input.GetTouch(i);
                 
-                // Check if touch is NOT over UI
-                if (!IsPointerOverUI(touch.position))
+                // If a finger is touching the joystick UI, skip it and look for the next finger!
+                if (IsPointerOverUI(touch.position))
                 {
-                    if (touch.phase == TouchPhase.Moved)
-                    {
-                        mouseX += touch.deltaPosition.x * sensitivity;
-                        mouseY -= touch.deltaPosition.y * sensitivity;
-                        
-                        // FIX: Clamps the vertical rotation between the minimum angle cap and your upper limit
-                        mouseY = Mathf.Clamp(mouseY, minimumVerticalAngle, verticalLimit);
-                    }
-                    break; // Only use first valid touch for camera
+                    continue; 
                 }
+
+                // Found a valid finger touching empty space! Apply camera rotation
+                if (touch.phase == TouchPhase.Moved)
+                {
+                    mouseX += touch.deltaPosition.x * sensitivity;
+                    mouseY -= touch.deltaPosition.y * sensitivity;
+                    mouseY = Mathf.Clamp(mouseY, minimumVerticalAngle, verticalLimit);
+                }
+                
+                break; // Lock onto this finger for camera logic during this frame state
             }
         }
-        // Mouse input for Editor testing
+        // Mouse input backup for Unity Editor testing
         else if (Input.GetMouseButton(0) && !IsPointerOverUIMouse())
         {
             mouseX += Input.GetAxis("Mouse X") * sensitivity * 5f;
             mouseY -= Input.GetAxis("Mouse Y") * sensitivity * 5f;
-            
-            // FIX: Applies the exact same lower angle block protection inside the Unity Editor
             mouseY = Mathf.Clamp(mouseY, minimumVerticalAngle, verticalLimit);
         }
         
         transform.rotation = Quaternion.Euler(mouseY, mouseX, 0f);
     }
 
-    // Check if touch position is over UI
     private bool IsPointerOverUI(Vector2 screenPosition)
     {
         if (EventSystem.current == null) return false;
@@ -101,7 +100,6 @@ public class CameraOrbit : MonoBehaviour
         return results.Count > 0;
     }
     
-    // Check if mouse is over UI (for Editor)
     private bool IsPointerOverUIMouse()
     {
         if (EventSystem.current == null) return false;
