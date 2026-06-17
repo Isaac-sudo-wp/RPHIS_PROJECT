@@ -4,96 +4,110 @@ using UnityEngine.EventSystems;
 public class MapCameraPan : MonoBehaviour, IDragHandler
 {
     [Header("Settings")]
-    public float panSpeed = 0.05f; // Decreased from 10f to make dragging responsive and smooth on mobile canvases
+    public float panSpeed = 1f; // Speed sensitivity multiplier
+    [Range(1f, 20f)]
+    public float smoothSpeed = 12f; // Gliding inertia smoothness
     
     [Header("Target Camera Setup")]
-    [Tooltip("Drag your secondary Map Camera or its parent holder here to execute panning movements directly.")]
     public Transform mapCameraHolder; 
     
-    [Header("Map Boundaries")]
-    [Tooltip("If using a standard Terrain component, assign it here.")]
-    public Terrain terrain;
-    
-    [Tooltip("If using a flat plane or mesh floor instead of a terrain, drag it here to generate matching boundaries.")]
-    public Transform plainMeshFloor;
-    
-    public float boundaryPadding = 50f;
+    [Header("Map Boundaries (HologramMapPlane)")]
+    public Transform plainMeshFloor; // Drag your HologramMapPlane here!
     
     private float minX, maxX, minZ, maxZ;
     private bool boundariesSet = false;
+    private Camera cachedMapCamera;
+    private Vector3 targetPosition;
     
     void Start()
     {
-        // FIX: Backup fallback check. If you forgot to assign it in the inspector, 
-        // it checks the old-fashioned way so it doesn't crash on boot!
         if (mapCameraHolder == null)
         {
-            GameObject holder = GameObject.Find("MapCameraHolder");
-            if (holder != null)
-            {
-                mapCameraHolder = holder.transform;
-            }
-            else
-            {
-                Debug.LogError("🚨 MapCameraHolder is missing from your scene hierarchy, or hasn't been dragged into the script slot!");
-            }
+            GameObject holder = GameObject.Find("MapCamera");
+            if (holder == null) holder = GameObject.Find("MapCameraHolder");
+            if (holder != null) mapCameraHolder = holder.transform;
+        }
+
+        if (mapCameraHolder != null)
+        {
+            cachedMapCamera = mapCameraHolder.GetComponent<Camera>();
+            if (cachedMapCamera == null) cachedMapCamera = mapCameraHolder.GetComponentInChildren<Camera>();
+            
+            targetPosition = mapCameraHolder.position;
         }
         
-        // --- CHOOSE BOUNDARY STRATEGY DYNAMICALLY ---
-        
-        // Option A: Handle standard high-poly terrain blocks
-        if (terrain != null)
+        CalculateCameraBounds();
+    }
+
+    public void CalculateCameraBounds()
+    {
+        if (plainMeshFloor != null && cachedMapCamera != null)
         {
-            Vector3 terrainSize = terrain.terrainData.size;
-            Vector3 terrainPosition = terrain.transform.position;
-            
-            minX = terrainPosition.x + boundaryPadding;
-            maxX = terrainPosition.x + terrainSize.x - boundaryPadding;
-            minZ = terrainPosition.z + boundaryPadding;
-            maxZ = terrainPosition.z + terrainSize.z - boundaryPadding;
-            
-            boundariesSet = true;
-            Debug.Log($"🗺️ Bound Matrix Set via Terrain Asset bounds.");
-        }
-        // Option B: Handle lightweight modular city planes or floor shapes safely
-        else if (plainMeshFloor != null)
-        {
-            // Read local mesh scaling factors directly to extract boundary widths
             Vector3 center = plainMeshFloor.position;
-            Vector3 size = plainMeshFloor.localScale * 10f; // Multiplied by standard 10x factor for primitive planes
+            // Standard Unity planes are 10 units wide per local scale unit
+            Vector3 planeSize = new Vector3(plainMeshFloor.localScale.x * 10f, 0f, plainMeshFloor.localScale.z * 10f);
             
-            minX = center.x - (size.x / 2f) + boundaryPadding;
-            maxX = center.x + (size.x / 2f) - boundaryPadding;
-            minZ = center.z - (size.z / 2f) + boundaryPadding;
-            maxZ = center.z + (size.z / 2f) - boundaryPadding;
-            
+            float halfPlaneX = planeSize.x / 2f;
+            float halfPlaneZ = planeSize.z / 2f;
+
+            // DYNAMIC ORTHOGRAPHIC BOUND CLAMP:
+            // This prevents the camera box from viewing outside the edges based on your camera's zoom/size
+            float camVertExtent = cachedMapCamera.orthographicSize;
+            float camHorizExtent = camVertExtent * cachedMapCamera.aspect;
+
+            // Calculate the absolute safe limits so the camera view never crosses the plane boundaries
+            minX = center.x - halfPlaneX + camHorizExtent;
+            maxX = center.x + halfPlaneX - camHorizExtent;
+            minZ = center.z - halfPlaneZ + camVertExtent;
+            maxZ = center.z + halfPlaneZ - camVertExtent;
+
+            // Failsafe: If the camera is zoomed out too far, lock it to the center of the plane
+            if (minX > maxX) { minX = maxX = center.x; }
+            if (minZ > maxZ) { minZ = maxZ = center.z; }
+
             boundariesSet = true;
-            Debug.Log($"🗺️ Bound Matrix Set via flat City Plane layout.");
-        }
-        else
-        {
-            Debug.LogWarning("⚠️ No Terrain or Mesh Floor assigned. Your map tracking camera will glide without bounds.");
+            Debug.Log($"🗺️ Map bounds strictly locked. X Limits: {minX} to {maxX} | Z Limits: {minZ} to {maxZ}");
         }
     }
     
     public void OnDrag(PointerEventData eventData)
     {
-        if (mapCameraHolder == null) return;
+        if (mapCameraHolder == null || cachedMapCamera == null) return;
         
         Vector2 delta = eventData.delta;
-        Vector3 newPosition = mapCameraHolder.position;
         
-        // Translate screen drag tracking coordinates securely into horizontal vectors
-        newPosition.x += -delta.x * panSpeed;
-        newPosition.z += -delta.y * panSpeed;
+        // Convert screen space pixels to precise world units based on orthographic bounds
+        float unitsPerPixel = (cachedMapCamera.orthographicSize * 2f) / Screen.height;
+
+        // FIXED DIRECTION: Map slides naturally with your hand gesture now
+        targetPosition.x -= delta.x * panSpeed * unitsPerPixel;
+        targetPosition.z -= delta.y * panSpeed * unitsPerPixel;
         
-        // Enforce safety clamp checks
+        // Enforce boundary constraints instantly on drag input
         if (boundariesSet)
         {
-            newPosition.x = Mathf.Clamp(newPosition.x, minX, maxX);
-            newPosition.z = Mathf.Clamp(newPosition.z, minZ, maxZ);
+            targetPosition.x = Mathf.Clamp(targetPosition.x, minX, maxX);
+            targetPosition.z = Mathf.Clamp(targetPosition.z, minZ, maxZ);
         }
-        
-        mapCameraHolder.position = newPosition;
+    }
+
+    void LateUpdate()
+    {
+        if (mapCameraHolder != null)
+        {
+            // Smoothly interpolate position coordinates
+            Vector3 smoothPos = Vector3.Lerp(mapCameraHolder.position, targetPosition, Time.deltaTime * smoothSpeed);
+            mapCameraHolder.position = new Vector3(smoothPos.x, mapCameraHolder.position.y, smoothPos.z);
+        }
+    }
+
+    // FIXED: Changed cachedMapCamera.hasChanged to mapCameraHolder.hasChanged
+    void Update()
+    {
+        if (mapCameraHolder != null && mapCameraHolder.hasChanged)
+        {
+            CalculateCameraBounds();
+            mapCameraHolder.hasChanged = false;
+        }
     }
 }

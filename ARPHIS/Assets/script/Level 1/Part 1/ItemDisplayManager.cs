@@ -5,7 +5,7 @@ public class ItemDisplayManager : MonoBehaviour
 {
     [Header("UI Connections")]
     public TextMeshProUGUI itemNameText;
-    public TextMeshProUGUI itemLoreText;
+    public TextMeshProUGUI itemDescriptionText; // CHANGED: From itemLoreText to itemDescriptionText
 
     [Header("Photo Studio Setup")]
     public Transform studioSpawnPoint;
@@ -16,6 +16,7 @@ public class ItemDisplayManager : MonoBehaviour
     public InventoryManager inventoryManager;
     public InspectUIManager inspectWindow;
 
+    [Header("System UI Canvas")]
     // NEW: We need a link to the main inventory screen so we can hide it!
     public GameObject inventoryCanvas;
 
@@ -31,10 +32,14 @@ public class ItemDisplayManager : MonoBehaviour
 
     public void UpdateDisplayPanel(ArtifactFragment itemData)
     {
+        if (itemData == null) return;
+
         currentItemData = itemData;
 
-        itemNameText.text = itemData.fragmentName;
-        itemLoreText.text = itemData.lore;
+        if (itemNameText != null) itemNameText.text = itemData.fragmentName;
+        
+        // FIXED: Changed from .lore to .descriptionText
+        if (itemDescriptionText != null) itemDescriptionText.text = itemData.descriptionText;
 
         if (current3DModel != null) Destroy(current3DModel);
 
@@ -52,8 +57,8 @@ public class ItemDisplayManager : MonoBehaviour
             inventoryManager.DropItem(currentItemData);
 
             currentItemData = null;
-            itemNameText.text = "";
-            itemLoreText.text = "";
+            if (itemNameText != null) itemNameText.text = "";
+            if (itemDescriptionText != null) itemDescriptionText.text = ""; // FIXED: Clear description text
             if (current3DModel != null) Destroy(current3DModel);
         }
     }
@@ -62,11 +67,10 @@ public class ItemDisplayManager : MonoBehaviour
     {
         if (currentItemData != null && inspectWindow != null)
         {
+            // FIXED: Removed .category and .weight parameters, changed .lore to .descriptionText
             inspectWindow.OpenInspectWindow(
                 currentItemData.fragmentName,
-                currentItemData.category,
-                currentItemData.weight,
-                currentItemData.lore,
+                currentItemData.descriptionText,
                 currentItemData.artifactPrefab,
                 currentItemData.isRealArtifact,
                 currentItemData,

@@ -6,42 +6,42 @@ public class InspectUIManager : MonoBehaviour
 {
     [Header("UI Text Elements")]
     public TextMeshProUGUI titleText;
-    public TextMeshProUGUI categoryText;
-    public TextMeshProUGUI weightText;
-    public TextMeshProUGUI loreText;
+    public TextMeshProUGUI descriptionText; 
 
     [Header("UI Buttons")]
     public GameObject collectButton;
     public GameObject ignoreButton;
-    public GameObject closeButton; // The new button for Inventory mode!
+    public GameObject closeButton; 
 
     [Header("3D Viewer Setup")]
     public Transform pedestal;
     private GameObject current3DModel;
     private bool currentIsReal;
 
+    [Header("360 Observation Settings")]
+    public float rotationSpeed = 0.5f; // Bilis ng ikot depende sa swipe ng player
+    private Vector3 previousMousePosition;
+
     [Header("Inventory Link")]
     public InventoryManager playerInventory;
     private ArtifactFragment currentFragment;
 
-    // NEW: Added 'bool isFromInventory' to the very end of this list!
-    public void OpenInspectWindow(string fName, string fCategory, string fWeight, string fLore, GameObject artifactPrefab, bool isReal, ArtifactFragment collectedFragment, bool isFromInventory)
+    public void OpenInspectWindow(string fName, string fDescription, GameObject artifactPrefab, bool isReal, ArtifactFragment collectedFragment, bool isFromInventory)
     {
-        titleText.text = fName;
-        categoryText.text = fCategory;
-        weightText.text = fWeight;
-        loreText.text = fLore;
+        if (titleText != null) titleText.text = fName;
+        if (descriptionText != null) descriptionText.text = fDescription;
+        
         currentIsReal = isReal;
         currentFragment = collectedFragment;
 
         if (current3DModel != null) Destroy(current3DModel);
 
-        if (artifactPrefab != null)
+        if (artifactPrefab != null && pedestal != null)
         {
             current3DModel = Instantiate(artifactPrefab, pedestal);
             current3DModel.transform.localPosition = Vector3.zero;
 
-            // Forces the scale to match perfectly (keeping our fix from earlier!)
+            // Pinapanatili ang saktong default size ng iyong prefab
             current3DModel.transform.localScale = artifactPrefab.transform.localScale;
 
             Collider col = current3DModel.GetComponent<Collider>();
@@ -51,14 +51,12 @@ public class InspectUIManager : MonoBehaviour
         // --- THE STATEFUL UI LOGIC ---
         if (isFromInventory == true)
         {
-            // Inspecting from backpack: Hide Collect/Ignore, Show Close
             if (collectButton != null) collectButton.SetActive(false);
             if (ignoreButton != null) ignoreButton.SetActive(false);
             if (closeButton != null) closeButton.SetActive(true);
         }
         else
         {
-            // Inspecting from street: Show Collect/Ignore, Hide Close
             if (collectButton != null) collectButton.SetActive(true);
             if (ignoreButton != null) ignoreButton.SetActive(true);
             if (closeButton != null) closeButton.SetActive(false);
@@ -67,17 +65,56 @@ public class InspectUIManager : MonoBehaviour
         gameObject.SetActive(true);
     }
 
+    void Update()
+    {
+        // GUMAGANA PAREHO SA PC (MOUSE) AT MOBILE (TOUCH/SWIPE)
+        if (gameObject.activeSelf && current3DModel != null)
+        {
+            // Kapag pinindot o hinawakan ang screen
+            if (Input.GetMouseButtonDown(0))
+            {
+                previousMousePosition = Input.mousePosition;
+            }
+            
+            // Habang kinakaladkad (dragging/swiping) ang artifact
+            if (Input.GetMouseButton(0))
+            {
+                Vector3 delta = Input.mousePosition - previousMousePosition;
+
+                // Math para sa 360 degree observation (Kaliwa-Kanan at Taas-Baba)
+                float rotateX = delta.x * rotationSpeed;
+                float rotateY = delta.y * rotationSpeed;
+
+                // I-rotate ang model sa World space para hindi nakakalito ang axis kapag nakabaligtad na
+                current3DModel.transform.Rotate(Vector3.up, -rotateX, Space.World);
+                current3DModel.transform.Rotate(Vector3.right, rotateY, Space.World);
+
+                previousMousePosition = Input.mousePosition;
+            }
+        }
+    }
+
     public void OnCollectClicked()
     {
         if (playerInventory != null && currentFragment != null)
         {
-            // Ask the inventory to take it, and remember the answer (true or false)
             bool itemWasAccepted = playerInventory.AddItemToInventory(currentFragment);
 
             if (itemWasAccepted == true)
             {
-                // THE FIX: ONLY disappear if the inventory actually accepted it!
-                currentFragment.gameObject.SetActive(false);
+                // --- CONNECT TO TRACKER SYSTEM DOWNGRADE TRIGGER ---
+                // Dito natin hahanapin ang MapTrackerManager para sabihing nabura na ang fragment na ito
+                MapTrackerManager trackerManager = FindObjectOfType<MapTrackerManager>();
+                if (trackerManager != null)
+                {
+                    // Tinatanggal ang kaukulang hologram point bago itago ang fragment object
+                    trackerManager.RemoveTracker(currentFragment.transform);
+                }
+
+                if (currentFragment.gameObject != null)
+                {
+                    currentFragment.gameObject.SetActive(false);
+                }
 
                 if (currentIsReal)
                 {
@@ -90,21 +127,18 @@ public class InspectUIManager : MonoBehaviour
             }
             else
             {
-                // If false, it skips the vanishing code entirely!
                 Debug.LogWarning("Item left on the street because the backpack is full!");
             }
         }
+        else
+        {
+            Debug.LogError("CRITICAL ERROR: Cannot process collection! The passed 'currentFragment' or 'playerInventory' is null.");
+        }
 
-        // Close the window so the player can keep walking
         gameObject.SetActive(false);
     }
+
     public void OnIgnoreClicked() { gameObject.SetActive(false); }
 
-    // NEW: A simple function for your new Close button
     public void OnCloseClicked() { gameObject.SetActive(false); }
-
-    public void RotateLeft() { if (current3DModel != null) current3DModel.transform.Rotate(0, 45f, 0, Space.World); }
-    public void RotateRight() { if (current3DModel != null) current3DModel.transform.Rotate(0, -45f, 0, Space.World); }
-    public void ZoomIn() { if (current3DModel != null) current3DModel.transform.localScale *= 1.2f; }
-    public void ResetView() { if (current3DModel != null) { current3DModel.transform.localRotation = Quaternion.Euler(0, 0, 0); current3DModel.transform.localScale = new Vector3(1, 1, 1); } }
 }

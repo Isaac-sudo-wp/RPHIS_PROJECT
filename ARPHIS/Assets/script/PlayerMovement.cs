@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI; 
+using System.Collections;
 
 public class PlayerMovement : MonoBehaviour
 {
@@ -8,6 +9,14 @@ public class PlayerMovement : MonoBehaviour
     public Joystick joystick; 
     public Transform camTransform; 
     public Animator anim; 
+
+    [Header("Camera Pivot Setup (For OTS Aiming)")]
+    [Tooltip("I-drag dito ang 'CameraPivot' object mo galing sa hierarchy.")]
+    public Transform cameraPivotTransform; 
+    [Tooltip("Normal camera center offset kung walang baril.")]
+    public Vector3 normalCameraLocalOffset = new Vector3(0f, 0f, 0f);
+    [Tooltip("Over-the-shoulder camera offset kapag naka-pistol mode.")]
+    public Vector3 pistolAimCameraOffset = new Vector3(0.75f, 0.2f, -0.5f);
 
     [Header("UI Elements")]
     public Slider staminaSlider; 
@@ -34,9 +43,11 @@ public class PlayerMovement : MonoBehaviour
     private float staminaDrainRate;
     private float rechargeRate;
 
-    // SOLID COMBAT LOCK
     private float attackLockTimer = 0f;
     private bool isAttacking = false;
+    private Coroutine weaponJumpWatcherCoroutine; 
+
+    private string currentPlayingLocomotionState = "";
 
     void Start()
     {
@@ -50,6 +61,12 @@ public class PlayerMovement : MonoBehaviour
             staminaSlider.maxValue = maxStamina;
             staminaSlider.value = currentStamina;
         }
+
+        // I-save ang default na posisyon ng camera pivot kung hindi pa manually na-set
+        if (cameraPivotTransform != null && normalCameraLocalOffset == Vector3.zero)
+        {
+            normalCameraLocalOffset = cameraPivotTransform.localPosition;
+        }
     }
 
     void Update()
@@ -57,7 +74,6 @@ public class PlayerMovement : MonoBehaviour
         if (joystick == null || controller == null || camTransform == null || anim == null) 
             return;
 
-        // Count down attack lock
         if (isAttacking)
         {
             attackLockTimer -= Time.deltaTime;
@@ -66,6 +82,48 @@ public class PlayerMovement : MonoBehaviour
                 isAttacking = false;
                 anim.SetBool("isWalking", false);
                 anim.SetBool("isRunning", false);
+                currentPlayingLocomotionState = "";
+            }
+        }
+
+        WeaponManager wpManager = GetComponent<WeaponManager>();
+        if (wpManager == null) wpManager = FindObjectOfType<WeaponManager>();
+
+        if (wpManager != null && wpManager.IsTransitioningWeapon())
+        {
+            if (!isAttacking)
+            {
+                controller.Move(Vector3.zero * Time.deltaTime);
+            }
+            currentPlayingLocomotionState = ""; 
+            ApplyGravityPhysicsOnly();
+            return;
+        }
+
+        // ========== DYNAMIC CAMERA POSITION & PLAYER ROTATION SYNC ==========
+        if (wpManager != null && wpManager.currentWeapon == WeaponManager.WeaponType.Pistol)
+        {
+            // 1. Swabe at automatic na i-blend ang CameraPivot papunta sa Over-the-shoulder look (Pangalawang larawan)
+            if (cameraPivotTransform != null)
+            {
+                cameraPivotTransform.localPosition = Vector3.Lerp(cameraPivotTransform.localPosition, pistolAimCameraOffset, Time.deltaTime * 5f);
+            }
+
+            // 2. ROTATION SYNC: Kusa at automatic na haharap si player kung saan nakatingin ang camera kapag iginalaw ito
+            Vector3 cameraForwardDirection = camTransform.forward;
+            cameraForwardDirection.y = 0f; 
+            if (cameraForwardDirection.sqrMagnitude > 0.001f)
+            {
+                Quaternion targetCamRotation = Quaternion.LookRotation(cameraForwardDirection);
+                transform.rotation = Quaternion.Slerp(transform.rotation, targetCamRotation, Time.deltaTime * rotationSpeed);
+            }
+        }
+        else
+        {
+            // Ibalik ang CameraPivot sa normal nitong gitnang posisyon kapag binitawan ang baril
+            if (cameraPivotTransform != null)
+            {
+                cameraPivotTransform.localPosition = Vector3.Lerp(cameraPivotTransform.localPosition, normalCameraLocalOffset, Time.deltaTime * 5f);
             }
         }
 
@@ -101,23 +159,55 @@ public class PlayerMovement : MonoBehaviour
         Vector3 moveDirection = (forward * z) + (right * x);
         float currentSpeed = (isRunning && !isExhausted && isJoystickMoving) ? runSpeed : walkSpeed;
 
-        // ========== MOVEMENT EXECUTION ==========
+        // ========== MOVEMENT EXECUTION & CODE-BASED CROSSFADE ==========
         if (isJoystickMoving && !isAttacking)
         {
             bool runningState = (currentSpeed == runSpeed);
-            anim.SetBool("isWalking", !runningState);
-            anim.SetBool("isRunning", runningState);
 
-            if (moveDirection.sqrMagnitude > 0.001f)
+            if (wpManager != null && wpManager.currentWeapon == WeaponManager.WeaponType.Pistol)
             {
-                float targetAngle = Mathf.Atan2(moveDirection.x, moveDirection.z) * Mathf.Rad2Deg;
-                transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.Euler(0, targetAngle, 0), Time.deltaTime * rotationSpeed);
+                string targetState = runningState ? "Pistol Run" : "Pistol Walk";
+                if (currentPlayingLocomotionState != targetState)
+                {
+                    currentPlayingLocomotionState = targetState;
+                    anim.CrossFadeInFixedTime(targetState, 0.15f, 0, 0f);
+                }
+            }
+            else 
+            {
+                if (currentPlayingLocomotionState != (runningState ? "Run" : "Walk"))
+                {
+                    anim.SetBool("isWalking", !runningState);
+                    anim.SetBool("isRunning", runningState);
+                    currentPlayingLocomotionState = runningState ? "Run" : "Walk";
+                }
+
+                if (moveDirection.sqrMagnitude > 0.001f)
+                {
+                    float targetAngle = Mathf.Atan2(moveDirection.x, moveDirection.z) * Mathf.Rad2Deg;
+                    transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.Euler(0, targetAngle, 0), Time.deltaTime * rotationSpeed);
+                }
             }
         }
-        else if (!isAttacking)
+        else if (!isAttacking) 
         {
-            anim.SetBool("isWalking", false);
-            anim.SetBool("isRunning", false);
+            if (wpManager != null && wpManager.currentWeapon == WeaponManager.WeaponType.Pistol)
+            {
+                if (currentPlayingLocomotionState != "Pistol Idle")
+                {
+                    currentPlayingLocomotionState = "Pistol Idle";
+                    anim.CrossFadeInFixedTime("Pistol Idle", 0.15f, 0, 0f);
+                }
+            }
+            else
+            {
+                if (currentPlayingLocomotionState != "Idle")
+                {
+                    anim.SetBool("isWalking", false);
+                    anim.SetBool("isRunning", false);
+                    currentPlayingLocomotionState = "Idle";
+                }
+            }
         }
 
         if (!isAttacking)
@@ -125,7 +215,17 @@ public class PlayerMovement : MonoBehaviour
             controller.Move(moveDirection * currentSpeed * Time.deltaTime);
         }
 
-        // ========== GRAVITY ==========
+        // ANTI-LAG RE-ALIGNMENT
+        if (anim != null)
+        {
+            anim.transform.localPosition = new Vector3(0f, anim.transform.localPosition.y, 0f);
+        }
+
+        ApplyGravityPhysicsOnly();
+    }
+
+    private void ApplyGravityPhysicsOnly()
+    {
         if (controller.isGrounded)
         {
             anim.SetBool("isGrounded", true);
@@ -137,66 +237,22 @@ public class PlayerMovement : MonoBehaviour
             velocity.y += gravity * Time.deltaTime;
             if (velocity.y < -20f) velocity.y = -20f;
         }
-        
         controller.Move(velocity * Time.deltaTime);
     }
 
-    // ========== COMBAT TRIGGER METHODS ==========
-
-    public void PerformPunching()
-    {
-        if (anim != null && !isAttacking)
-        {
-            StartCombatLock(1.8f);
-            anim.SetTrigger("PunchingTrigger"); 
-            Debug.Log("Punch executed!");
-        }
-    }
-
-    public void PerformKick()
-    {
-        if (anim != null && !isAttacking)
-        {
-            StartCombatLock(1.5f);
-            anim.SetTrigger("KickTrigger");
-            Debug.Log("Kick executed!");
-        }
-    }
-
-    public void PerformComboPunch()
-    {
-        if (anim != null && !isAttacking)
-        {
-            StartCombatLock(1.8f); 
-            anim.SetTrigger("ComboPunch"); 
-        }
-    }
-
-    public void PerformUpperCut()
-    {
-        if (anim != null && !isAttacking)
-        {
-            StartCombatLock(1.8f); 
-            anim.SetTrigger("UppercutTrigger");
-        }
-    }
-
-    public void PerformSideKick()
-    {
-        if (anim != null && !isAttacking)
-        {
-            StartCombatLock(1.5f);
-            anim.SetTrigger("SideKickTrigger"); 
-        }
-    }
+    public void PerformPunching() { if (anim != null && !isAttacking) { StartCombatLock(1.8f); anim.SetTrigger("PunchingTrigger"); } }
+    public void PerformKick() { if (anim != null && !isAttacking) { StartCombatLock(1.5f); anim.SetTrigger("KickTrigger"); } }
+    public void PerformComboPunch() { if (anim != null && !isAttacking) { StartCombatLock(1.8f); anim.SetTrigger("ComboPunch"); } }
+    public void PerformUpperCut() { if (anim != null && !isAttacking) { StartCombatLock(1.8f); anim.SetTrigger("UppercutTrigger"); } }
+    public void PerformSideKick() { if (anim != null && !isAttacking) { StartCombatLock(1.5f); anim.SetTrigger("SideKickTrigger"); } }
 
     private void StartCombatLock(float durationSeconds)
     {
         isAttacking = true;
         attackLockTimer = durationSeconds;
-        
         anim.SetBool("isWalking", false);
         anim.SetBool("isRunning", false);
+        currentPlayingLocomotionState = "";
     }
 
     public void Jump()
@@ -204,22 +260,70 @@ public class PlayerMovement : MonoBehaviour
         if (controller.isGrounded && !isAttacking)
         {
             velocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
-            anim.SetTrigger("jumpTrigger");
+            
+            WeaponManager wpManager = GetComponent<WeaponManager>();
+            if (wpManager == null) wpManager = FindObjectOfType<WeaponManager>();
+
+            if (wpManager != null)
+            {
+                if (wpManager.currentWeapon == WeaponManager.WeaponType.Pistol)
+                {
+                    anim.CrossFadeInFixedTime("Pistol Jump", 0.1f, 0, 0f);
+                    currentPlayingLocomotionState = "Pistol Jump";
+                    if (weaponJumpWatcherCoroutine != null) StopCoroutine(weaponJumpWatcherCoroutine);
+                    weaponJumpWatcherCoroutine = StartCoroutine(WatchWeaponLandingRoutine(wpManager));
+                }
+                else if (wpManager.currentWeapon == WeaponManager.WeaponType.Knife)
+                {
+                    anim.CrossFadeInFixedTime("Knife Jump", 0.1f, 0, 0f);
+                    currentPlayingLocomotionState = "Knife Jump";
+                    if (weaponJumpWatcherCoroutine != null) StopCoroutine(weaponJumpWatcherCoroutine);
+                    weaponJumpWatcherCoroutine = StartCoroutine(WatchWeaponLandingRoutine(wpManager));
+                }
+                else
+                {
+                    anim.SetTrigger("jumpTrigger");
+                    currentPlayingLocomotionState = "Jump";
+                }
+            }
         }
     }
 
-    public void StartRunning() 
-    { 
-        if (!isExhausted && currentStamina > 0.5f && !isAttacking) 
-            isRunning = true; 
+    private IEnumerator WatchWeaponLandingRoutine(WeaponManager wpManager)
+    {
+        yield return new WaitForSeconds(0.15f);
+
+        while (!controller.isGrounded)
+        {
+            yield return null;
+        }
+
+        if (wpManager != null)
+        {
+            float x = joystick != null ? joystick.Horizontal : 0f;
+            float z = joystick != null ? joystick.Vertical : 0f;
+            bool isMoving = (Mathf.Abs(x) > 0.05f || Mathf.Abs(z) > 0.05f);
+
+            string statePrefix = (wpManager.currentWeapon == WeaponManager.WeaponType.Pistol) ? "Pistol" : "Knife";
+
+            if (isMoving)
+            {
+                bool runningState = (isRunning && !isExhausted);
+                string targetState = runningState ? statePrefix + " Run" : statePrefix + " Walk";
+                currentPlayingLocomotionState = targetState;
+                anim.CrossFadeInFixedTime(targetState, 0.15f, 0, 0f);
+            }
+            else
+            {
+                currentPlayingLocomotionState = statePrefix + " Idle";
+                anim.CrossFadeInFixedTime(statePrefix + " Idle", 0.15f, 0, 0f);
+            }
+        }
+        weaponJumpWatcherCoroutine = null;
     }
-    
-    public void StopRunning() 
-    { 
-        if (isRunning) 
-            isRunning = false; 
-    }
-    
+
+    public void StartRunning() { if (!isExhausted && currentStamina > 0.5f && !isAttacking) isRunning = true; }
+    public void StopRunning() { if (isRunning) isRunning = false; }
     public bool IsRunning() { return isRunning && !isExhausted; }
     public float GetStaminaPercent() { return currentStamina / maxStamina; }
 }

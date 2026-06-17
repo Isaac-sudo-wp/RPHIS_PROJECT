@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: a10c30e9fe457754cab325b705931e8a
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences:
+  - trackerPointPrefab: {fileID: 578390249029491175, guid: 8161dbdba742aa345988e23948d4fe33,
+      type: 3}
+  - hologramMapPlane: {instanceID: 0}
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
