@@ -46,6 +46,7 @@ public class ItemDisplayManager : MonoBehaviour
         if (itemData.artifactPrefab != null)
         {
             current3DModel = Instantiate(itemData.artifactPrefab, studioSpawnPoint);
+            current3DModel.SetActive(true);
             current3DModel.transform.localPosition = Vector3.zero;
         }
     }
