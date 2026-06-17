@@ -13,7 +13,7 @@ public class InventorySlotUI : MonoBehaviour
         // Connect to the TV Screen Brain
         displayManager = FindObjectOfType<ItemDisplayManager>();
 
-        // BUG FIX: Search for the Button on this object AND its children (like the ItemIcon)
+        // BUG FIX: Search for the Button on this object AND its children
         Button slotButton = GetComponentInChildren<Button>();
 
         if (slotButton != null)
@@ -37,7 +37,8 @@ public class InventorySlotUI : MonoBehaviour
             displayManager = FindObjectOfType<ItemDisplayManager>(true);
         }
 
-        if (hasItem == false)
+        // Failsafes to prevent errors
+        if (!hasItem)
         {
             Debug.Log("--- The slot is empty, ignoring click.");
             return;
@@ -55,7 +56,7 @@ public class InventorySlotUI : MonoBehaviour
             return;
         }
 
-        // If we pass all checks, send the data!
+        // If we pass all checks, send the data to the bottom panel!
         displayManager.UpdateDisplayPanel(storedFragment);
         Debug.Log("--- SUCCESS: Sent " + storedFragment.fragmentName + " to the bottom panel!");
     }
