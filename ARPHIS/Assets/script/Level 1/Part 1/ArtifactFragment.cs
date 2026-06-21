@@ -7,9 +7,9 @@ public class ArtifactFragment : MonoBehaviour
 
     [Header("Fragment Data")]
     public string fragmentName = "FRAGMENT 1";
-    
+
     [TextArea(4, 10)]
-    public string descriptionText = "Sample description here..."; 
+    public string descriptionText = "Sample description here...";
 
     [Header("3D Model Setup")]
     public GameObject artifactPrefab;
@@ -22,6 +22,12 @@ public class ArtifactFragment : MonoBehaviour
     [Tooltip("Drag Rex Barragan here so this fragment knows when to reveal itself!")]
     public NPCInteraction rexBarraganNPC;
 
+    // --- NEW: PICKUP DISTANCE VARIABLES ---
+    [Header("Pickup Settings")]
+    public float pickupRange = 3f;
+    private Transform playerTransform;
+    // --------------------------------------
+
     private MeshRenderer meshRenderer;
     private Collider fragmentCollider; // FIXED: Changed '3dCollider' to a legal identifier string name!
     private bool isRevealed = false;
@@ -30,7 +36,7 @@ public class ArtifactFragment : MonoBehaviour
     {
         // Capture the renderer handling the 3D meshes visual data matrix
         meshRenderer = GetComponent<MeshRenderer>();
-        
+
         // Failsafe: If your low-poly model graphics sit inside a child object, search there
         if (meshRenderer == null)
         {
@@ -43,6 +49,14 @@ public class ArtifactFragment : MonoBehaviour
 
     private void Start()
     {
+        // --- NEW: FIND THE PLAYER AT STARTUP ---
+        GameObject player = GameObject.FindGameObjectWithTag("Player");
+        if (player != null)
+        {
+            playerTransform = player.transform;
+        }
+        // ---------------------------------------
+
         // If Rex Barragan is linked, BOTH real and fake items hide instantly at boot.
         if (rexBarraganNPC != null)
         {
@@ -82,11 +96,11 @@ public class ArtifactFragment : MonoBehaviour
     private void RevealFragment()
     {
         isRevealed = true;
-        
+
         // Materialize visual mesh grids
         if (meshRenderer != null)
         {
-            meshRenderer.enabled = true; 
+            meshRenderer.enabled = true;
         }
 
         // Reactivate 3D click bounds cleanly
@@ -102,6 +116,19 @@ public class ArtifactFragment : MonoBehaviour
     {
         // BLOCK INPUT: If the fragment hasn't been officially revealed yet, ignore clicks!
         if (!isRevealed) return;
+
+        // --- NEW: DISTANCE CHECK ---
+        // Block the click if the player is standing too far away!
+        if (playerTransform != null)
+        {
+            float distance = Vector3.Distance(playerTransform.position, transform.position);
+            if (distance > pickupRange)
+            {
+                Debug.Log($"You are too far away to inspect {fragmentName}!");
+                return; // Exit instantly, skipping all the UI code below
+            }
+        }
+        // ---------------------------
 
         // --- 🔥 DIALOGUE & PHONE CALL INPUT PROTECTION ---
         // 1. Check if the central Dialogue Subtitle Box panel layout is active
@@ -126,7 +153,7 @@ public class ArtifactFragment : MonoBehaviour
 
         if (tabletPanel != null && tabletPanel.activeInHierarchy)
         {
-            return; 
+            return;
         }
 
         // 2. ALTERNATIVE STRATEGY:

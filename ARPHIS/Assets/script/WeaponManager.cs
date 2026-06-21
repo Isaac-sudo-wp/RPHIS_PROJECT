@@ -12,11 +12,11 @@ public class WeaponManager : MonoBehaviour
     public Image activeWeaponIconDisplay;
     public Sprite knifeSprite;
     public Sprite punchSprite;
-    public Sprite pistolSprite; 
+    public Sprite pistolSprite;
 
     [Header("Dedicated UI Crosshair Target")]
     [Tooltip("I-drag dito ang 'imgTarget' GameObject galing sa Canvas.")]
-    public GameObject imgTargetUI; 
+    public GameObject imgTargetUI;
 
     [Header("Pistol Shooting Setup")]
     [Tooltip("I-drag dito ang 'BarrelTip' empty gameobject na nasa dulo ng nguso ng baril.")]
@@ -40,7 +40,7 @@ public class WeaponManager : MonoBehaviour
     public Image[] dashboardButtonImages;
     public Sprite[] knifeCombatSprites;
     public Sprite[] punchCombatSprites;
-    public Sprite[] pistolCombatSprites; 
+    public Sprite[] pistolCombatSprites;
 
     [Header("Knife/Pistol Attack Button Routing")]
     public Button[] attackButtons;
@@ -52,24 +52,35 @@ public class WeaponManager : MonoBehaviour
 
     [Header("3D Weapon Mesh Toggles")]
     public GameObject physicalKnife3D;
-    public GameObject physicalPistol3D; 
+    public GameObject physicalPistol3D;
 
     [Header("Animation Tuning")]
     public float drawAnimationSpeed = 1.5f;
     public float knifeShowDelay = 0.25f;
     public float knifeHideDelay = 0.35f;
-    public float pistolShowDelay = 0.25f; 
+    public float pistolShowDelay = 0.25f;
 
     [Header("Manual Forward Force Settings")]
     public float[] forwardForces = new float[] { 8f, 12f, 10f, 15f };
 
+    // ➕ NEW: Damage & Hitbox Settings added here!
+    [Header("Damage & Hitbox Settings")]
+    public int punchDamage = 10;
+    public int knifeDamage = 25;
+    public int gunDamage = 40;
+    public float meleeRange = 3f;
+    [Tooltip("Place an empty GameObject just in front of the player's chest")]
+    public Transform meleeAttackPoint;
+    [Tooltip("Set this to your 'Enemy' layer so you only punch bad guys")]
+    public LayerMask enemyLayer;
+
     [HideInInspector] public bool isHoldingKnifeStatus = false;
-    [HideInInspector] public bool isHoldingPistolStatus = false; 
+    [HideInInspector] public bool isHoldingPistolStatus = false;
 
     private Coroutine currentTransitionCoroutine;
     private Coroutine attackSequenceCoroutine;
-    private bool internalAttackLock = false; 
-    private bool isWeaponTransitionActive = false; 
+    private bool internalAttackLock = false;
+    private bool isWeaponTransitionActive = false;
     private RectTransform targetRectTransform;
 
     private Sprite originalPunchSprite;
@@ -79,18 +90,18 @@ public class WeaponManager : MonoBehaviour
         // 🔥 SAFE INITIALIZATION RESET: Code-based visibility override sa unang frame
         if (physicalKnife3D != null) physicalKnife3D.SetActive(false);
         if (physicalPistol3D != null) physicalPistol3D.SetActive(false);
-        
-        if (imgTargetUI != null) 
+
+        if (imgTargetUI != null)
         {
             imgTargetUI.SetActive(false);
             targetRectTransform = imgTargetUI.GetComponent<RectTransform>();
         }
-        
+
         if (playerAnimator != null) playerAnimator.applyRootMotion = false;
 
         if (imgPunchDisplayLocked())
         {
-            originalPunchSprite = dashboardButtonImages[0].sprite; 
+            originalPunchSprite = dashboardButtonImages[0].sprite;
         }
 
         if (weaponAudioSource == null)
@@ -119,7 +130,7 @@ public class WeaponManager : MonoBehaviour
         {
             Vector3 targetWorldPosition = pistolBarrelTip.position + (pistolBarrelTip.forward * 10f);
             Vector2 screenPoint = Camera.main.WorldToScreenPoint(targetWorldPosition);
-            
+
             if (targetRectTransform != null && screenPoint.x > 0 && screenPoint.y > 0)
             {
                 targetRectTransform.position = screenPoint;
@@ -167,10 +178,10 @@ public class WeaponManager : MonoBehaviour
     {
         if (activeWeaponIconDisplay != null && knifeSprite != null) activeWeaponIconDisplay.sprite = knifeSprite;
         SwapDashboardSprites(knifeCombatSprites);
-        
+
         if (physicalKnife3D != null) physicalKnife3D.SetActive(false);
         if (physicalPistol3D != null) physicalPistol3D.SetActive(false);
-        if (imgTargetUI != null) imgTargetUI.SetActive(false); 
+        if (imgTargetUI != null) imgTargetUI.SetActive(false);
 
         if (playerAnimator != null)
         {
@@ -201,7 +212,7 @@ public class WeaponManager : MonoBehaviour
         if (playerAnimator != null)
         {
             playerAnimator.SetBool("isHoldingWeapon", true);
-            playerAnimator.speed = 1f; 
+            playerAnimator.speed = 1f;
             playerAnimator.CrossFadeInFixedTime("Knife Idle", 0.2f, 0, 0f);
         }
         isWeaponTransitionActive = false;
@@ -225,7 +236,7 @@ public class WeaponManager : MonoBehaviour
 
     IEnumerator ExecuteDrawPistolSequence()
     {
-        isWeaponTransitionActive = true; 
+        isWeaponTransitionActive = true;
         float adjustedTotalDuration = 0.75f / drawAnimationSpeed;
         float adjustedPistolDelay = pistolShowDelay / drawAnimationSpeed;
 
@@ -251,9 +262,9 @@ public class WeaponManager : MonoBehaviour
             playerAnimator.speed = 1f;
             playerAnimator.CrossFadeInFixedTime("Pistol Idle", 0.2f, 0, 0f);
         }
-        
+
         yield return new WaitForSeconds(0.1f);
-        isWeaponTransitionActive = false; 
+        isWeaponTransitionActive = false;
         currentTransitionCoroutine = null;
     }
 
@@ -264,7 +275,7 @@ public class WeaponManager : MonoBehaviour
 
         if (physicalKnife3D != null) physicalKnife3D.SetActive(false);
         if (physicalPistol3D != null) physicalPistol3D.SetActive(false);
-        if (imgTargetUI != null) imgTargetUI.SetActive(false); 
+        if (imgTargetUI != null) imgTargetUI.SetActive(false);
 
         if (playerAnimator != null)
         {
@@ -281,7 +292,7 @@ public class WeaponManager : MonoBehaviour
         if (playerAnimator != null)
         {
             playerAnimator.SetBool("isHoldingWeapon", false);
-            playerAnimator.speed = 1f; 
+            playerAnimator.speed = 1f;
 
             if (previousWeapon == WeaponType.Pistol)
             {
@@ -294,7 +305,7 @@ public class WeaponManager : MonoBehaviour
         }
 
         yield return new WaitForSeconds(knifeHideDelay / drawAnimationSpeed);
-        
+
         if (physicalKnife3D != null) physicalKnife3D.SetActive(false);
         if (physicalPistol3D != null) physicalPistol3D.SetActive(false);
 
@@ -324,9 +335,24 @@ public class WeaponManager : MonoBehaviour
             return;
         }
 
+        // ➕ NEW: Added logic so the Fists actually deal damage!
+        if (currentWeapon == WeaponType.Fists)
+        {
+            if (internalAttackLock) return;
+
+            // Add your punch animation trigger here if you have one! Example:
+            // if (playerAnimator != null) playerAnimator.SetTrigger("Punch");
+
+            DealMeleeDamage(punchDamage);
+        }
+
         if (currentWeapon == WeaponType.Knife)
         {
-            if (internalAttackLock) return; 
+            if (internalAttackLock) return;
+
+            // ➕ NEW: Deal the knife damage as soon as the attack button is pressed
+            DealMeleeDamage(knifeDamage);
+
             if (playerAnimator != null)
             {
                 playerAnimator.speed = 1f;
@@ -355,17 +381,30 @@ public class WeaponManager : MonoBehaviour
         {
             GameObject flashInstance = Instantiate(muzzleFlashPrefab, pistolBarrelTip.position, pistolBarrelTip.rotation);
             flashInstance.transform.parent = pistolBarrelTip;
-            
+
             // 🔥 HARD SCALE RE-ALIGNMENT: Pinupwersa ang saktong sukat ng nguso para hindi sumabog na parang kanyon
             flashInstance.transform.localScale = new Vector3(0.1f, 0.1f, 0.1f);
-            
+
             Destroy(flashInstance, effectDestroyDelay);
         }
 
         RaycastHit hit;
-        if (Physics.Raycast(pistolBarrelTip.position, pistolBarrelTip.forward, out hit, pistolRange))
+        // ➕ NEW: Raycast now checks if the object it hit has the CharacterHealth script!
+        // Mahirap patamain yung baril
+        //if (Physics.Raycast(pistolBarrelTip.position, pistolBarrelTip.forward, out hit, pistolRange))
+
+        // ➕ NEW CODE (Thick Bullet) madaling patamain yung baril:
+        // The "0.5f" creates a 1-meter wide invisible cylinder for your bullet!
+        if (Physics.SphereCast(pistolBarrelTip.position, 0.5f, pistolBarrelTip.forward, out hit, pistolRange))
+
         {
             Debug.Log("💥 Bala tumama sa: " + hit.collider.name);
+
+            CharacterHealth enemyHealth = hit.collider.GetComponent<CharacterHealth>();
+            if (enemyHealth != null)
+            {
+                enemyHealth.TakeDamage(gunDamage);
+            }
         }
     }
 
@@ -382,14 +421,41 @@ public class WeaponManager : MonoBehaviour
             yield return null;
         }
 
-        if (playerAnimator != null) playerAnimator.speed = 0f; 
+        if (playerAnimator != null) playerAnimator.speed = 0f;
         yield return new WaitForSeconds(0.15f);
 
         if (playerAnimator != null)
         {
             playerAnimator.speed = 1f;
-            playerAnimator.CrossFadeInFixedTime("Knife Idle", 0.15f, 0, 0f); 
+            playerAnimator.CrossFadeInFixedTime("Knife Idle", 0.15f, 0, 0f);
         }
         internalAttackLock = false;
+    }
+
+    // ➕ NEW: The function that handles the invisible melee sphere
+    private void DealMeleeDamage(int damageAmount)
+    {
+        if (meleeAttackPoint == null) return;
+
+        Collider[] hitEnemies = Physics.OverlapSphere(meleeAttackPoint.position, meleeRange, enemyLayer);
+
+        foreach (Collider enemy in hitEnemies)
+        {
+            CharacterHealth enemyHealth = enemy.GetComponent<CharacterHealth>();
+            if (enemyHealth != null)
+            {
+                enemyHealth.TakeDamage(damageAmount);
+            }
+        }
+    }
+
+    // ➕ NEW: Draws the red circle in the Unity Scene view so you can see your punch range
+    void OnDrawGizmosSelected()
+    {
+        if (meleeAttackPoint != null)
+        {
+            Gizmos.color = Color.red;
+            Gizmos.DrawWireSphere(meleeAttackPoint.position, meleeRange);
+        }
     }
 }

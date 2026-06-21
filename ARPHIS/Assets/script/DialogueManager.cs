@@ -8,7 +8,7 @@ public struct DialogueLine
     public string speakerName;
     [TextArea(2, 5)]
     public string sentenceText;
-    
+
     [Header("Optional Event")]
     public GameObject documentPanelToShow; // Leave empty unless you want a document to pop up after this line!
 }
@@ -56,7 +56,7 @@ public class DialogueManager : MonoBehaviour
 
         // 1. Turn ON the dialogue UI box
         if (dialoguePanel != null) dialoguePanel.SetActive(true);
-        
+
         // 2. Turn OFF the standard gameplay UI (joystick, HUD buttons)
         if (inGamePanel != null) inGamePanel.SetActive(false);
 
@@ -98,7 +98,7 @@ public class DialogueManager : MonoBehaviour
     private void TriggerDocument(GameObject docPanel)
     {
         isDocumentOpen = true;
-        
+
         // Open the multi-page registry document overlay
         if (docPanel != null) docPanel.SetActive(true);
 
@@ -111,7 +111,7 @@ public class DialogueManager : MonoBehaviour
     {
         if (docPanel != null) docPanel.SetActive(false);
         isDocumentOpen = false;
-        
+
         // Bring back the dialogue UI panel box so they can read the next lines!
         if (dialoguePanel != null) dialoguePanel.SetActive(true);
 
@@ -123,7 +123,7 @@ public class DialogueManager : MonoBehaviour
     {
         // 1. Turn OFF the dialogue UI box completely
         if (dialoguePanel != null) dialoguePanel.SetActive(false);
-        
+
         // 2. Bring back the gameplay UI safely so the player can walk around again!
         if (inGamePanel != null) inGamePanel.SetActive(true);
 

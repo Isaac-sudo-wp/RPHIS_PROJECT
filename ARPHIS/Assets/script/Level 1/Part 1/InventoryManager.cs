@@ -1,4 +1,4 @@
-using System.Collections; // <--- NEW: Required for the Coroutine stopwatch!
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
@@ -13,7 +13,48 @@ public class InventoryManager : MonoBehaviour
     public Transform playerTransform;
 
     [Header("UI Popups")]
-    public GameObject warningMessageUI; // <--- NEW: The slot for your PNG!
+    public GameObject warningMessageUI;
+
+    // ==========================================
+    // QUEST ITEMS FOR MANLILILOK
+    // ==========================================
+    [Header("Quest Status")]
+    public bool hasChisel = false;
+    public bool hasWoodGlue = false;
+
+    public void CollectChisel()
+    {
+        hasChisel = true;
+        Debug.Log("Quest Item Got: Chisel!");
+    }
+
+    public void CollectWoodGlue()
+    {
+        hasWoodGlue = true;
+        Debug.Log("Quest Item Got: Wood Glue!");
+    }
+
+    // --- NEW: Stage 1 Check (Fragments Only) ---
+    // The NPC script uses this to see if you have found all 5 pieces yet.
+    public bool HasAllFragments()
+    {
+        return collectedItems.Count >= 4;
+    }
+
+    // --- NEW: Stage 2 Check (Tools Only) ---
+    // The NPC script uses this to see if you found the chisel and glue.
+    public bool HasChiselAndGlue()
+    {
+        return hasChisel && hasWoodGlue;
+    }
+
+    // --- Original Check (Kept for safety) ---
+    public bool HasAllPuzzleRequirements()
+    {
+        // Requires 5 fragments AND both tools all at once.
+        return (collectedItems.Count >= 4 && hasChisel && hasWoodGlue);
+    }
+    // ==========================================
 
     public int GetCurrentItemCount()
     {
@@ -23,7 +64,7 @@ public class InventoryManager : MonoBehaviour
     public bool AddItemToInventory(ArtifactFragment itemData)
     {
         // Safety Net: If full, trigger the visual warning and block the item!
-        if (collectedItems.Count >= 5)
+        if (collectedItems.Count >= 4)
         {
             Debug.LogWarning("Inventory limit reached! Cannot add more items.");
 
@@ -42,7 +83,7 @@ public class InventoryManager : MonoBehaviour
         return true;
     }
 
-    // --- NEW: The Timer Function ---
+    // --- The Timer Function ---
     private IEnumerator ShowWarningRoutine()
     {
         // 1. Turn the PNG ON

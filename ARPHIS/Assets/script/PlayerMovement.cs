@@ -1,43 +1,51 @@
 using UnityEngine;
-using UnityEngine.UI; 
+using UnityEngine.UI;
 using System.Collections;
 
 public class PlayerMovement : MonoBehaviour
 {
     [Header("Components")]
     public CharacterController controller;
-    public Joystick joystick; 
-    public Transform camTransform; 
-    public Animator anim; 
+    public Joystick joystick;
+    public Transform camTransform;
+    public Animator anim;
 
     [Header("Camera Pivot Setup (For OTS Aiming)")]
     [Tooltip("I-drag dito ang 'CameraPivot' object mo galing sa hierarchy.")]
-    public Transform cameraPivotTransform; 
+    public Transform cameraPivotTransform;
     [Tooltip("Normal camera center offset kung walang baril.")]
     public Vector3 normalCameraLocalOffset = new Vector3(0f, 0f, 0f);
     [Tooltip("Over-the-shoulder camera offset kapag naka-pistol mode.")]
     public Vector3 pistolAimCameraOffset = new Vector3(0.75f, 0.2f, -0.5f);
 
     [Header("UI Elements")]
-    public Slider staminaSlider; 
+    public Slider staminaSlider;
 
     [Header("Movement Settings")]
     public float walkSpeed = 5f;
     public float runSpeed = 10f;
-    public float rotationSpeed = 10f; 
+    public float rotationSpeed = 10f;
     public float gravity = -9.81f;
-    
+
     [Header("Jump Settings")]
-    public float jumpHeight = 1.5f; 
+    public float jumpHeight = 1.5f;
 
     [Header("Stamina Settings")]
-    public float runTimeInSeconds = 15f;        
-    public float rechargeTimeInSeconds = 60f;   
-    
+    public float runTimeInSeconds = 15f;
+    public float rechargeTimeInSeconds = 60f;
+
+    [Header("Combat Settings")]
+    [Tooltip("How far forward the attack reaches.")]
+    public float attackRange = 1f;
+    [Tooltip("How much damage a melee attack does.")]
+    public int attackDamage = 10;
+    [Tooltip("Set this to your 'Enemy' layer so you only hit enemies!")]
+    public LayerMask enemyLayer;
+
     private float maxStamina;
-    private float currentStamina; 
+    private float currentStamina;
     private bool isRunning = false;
-    private bool isExhausted = false; 
+    private bool isExhausted = false;
     private Vector3 velocity;
     private float actualRunTime = 0f;
     private float staminaDrainRate;
@@ -45,15 +53,18 @@ public class PlayerMovement : MonoBehaviour
 
     private float attackLockTimer = 0f;
     private bool isAttacking = false;
-    private Coroutine weaponJumpWatcherCoroutine; 
+    private Coroutine weaponJumpWatcherCoroutine;
 
     private string currentPlayingLocomotionState = "";
 
     void Start()
     {
-        maxStamina = runTimeInSeconds;                    
-        staminaDrainRate = 1f;                            
-        rechargeRate = maxStamina / rechargeTimeInSeconds; 
+
+        // Add this line to the very top of your Start function
+        Debug.Log("PLAYER SPAWNED AT: " + transform.position);
+        maxStamina = runTimeInSeconds;
+        staminaDrainRate = 1f;
+        rechargeRate = maxStamina / rechargeTimeInSeconds;
         currentStamina = maxStamina;
 
         if (staminaSlider != null)
@@ -71,7 +82,9 @@ public class PlayerMovement : MonoBehaviour
 
     void Update()
     {
-        if (joystick == null || controller == null || camTransform == null || anim == null) 
+
+
+        if (joystick == null || controller == null || camTransform == null || anim == null)
             return;
 
         if (isAttacking)
@@ -95,7 +108,7 @@ public class PlayerMovement : MonoBehaviour
             {
                 controller.Move(Vector3.zero * Time.deltaTime);
             }
-            currentPlayingLocomotionState = ""; 
+            currentPlayingLocomotionState = "";
             ApplyGravityPhysicsOnly();
             return;
         }
@@ -111,7 +124,7 @@ public class PlayerMovement : MonoBehaviour
 
             // 2. ROTATION SYNC: Kusa at automatic na haharap si player kung saan nakatingin ang camera kapag iginalaw ito
             Vector3 cameraForwardDirection = camTransform.forward;
-            cameraForwardDirection.y = 0f; 
+            cameraForwardDirection.y = 0f;
             if (cameraForwardDirection.sqrMagnitude > 0.001f)
             {
                 Quaternion targetCamRotation = Quaternion.LookRotation(cameraForwardDirection);
@@ -138,7 +151,7 @@ public class PlayerMovement : MonoBehaviour
             if (currentStamina <= 0f)
             {
                 currentStamina = 0f;
-                isExhausted = true; 
+                isExhausted = true;
                 isRunning = false;
             }
         }
@@ -173,7 +186,7 @@ public class PlayerMovement : MonoBehaviour
                     anim.CrossFadeInFixedTime(targetState, 0.15f, 0, 0f);
                 }
             }
-            else 
+            else
             {
                 if (currentPlayingLocomotionState != (runningState ? "Run" : "Walk"))
                 {
@@ -189,7 +202,7 @@ public class PlayerMovement : MonoBehaviour
                 }
             }
         }
-        else if (!isAttacking) 
+        else if (!isAttacking)
         {
             if (wpManager != null && wpManager.currentWeapon == WeaponManager.WeaponType.Pistol)
             {
@@ -255,12 +268,46 @@ public class PlayerMovement : MonoBehaviour
         currentPlayingLocomotionState = "";
     }
 
+    // ========== THIS IS THE ANIMATION EVENT FUNCTION ==========
+    public void DealMeleeDamage()
+    {
+        // 1. Calculate a point slightly in front of the player's chest
+        Vector3 hitCenter = transform.position + transform.forward * 1.0f + Vector3.up * 1.0f;
+
+        // 2. Create an invisible sphere that finds anything on the Enemy Layer
+        Collider[] hitEnemies = Physics.OverlapSphere(hitCenter, attackRange, enemyLayer);
+
+        // 3. Keep track of who we already hit so we don't damage them twice!
+        System.Collections.Generic.List<CharacterHealth> alreadyHit = new System.Collections.Generic.List<CharacterHealth>();
+
+        // 4. Apply damage to everyone caught in the sphere
+        foreach (Collider enemy in hitEnemies)
+        {
+            CharacterHealth enemyHealth = enemy.GetComponent<CharacterHealth>();
+
+            // If they have health, AND we haven't damaged them yet this punch...
+            if (enemyHealth != null && !alreadyHit.Contains(enemyHealth))
+            {
+                enemyHealth.TakeDamage(attackDamage);
+                alreadyHit.Add(enemyHealth); // Add them to the list so they don't get double-hit
+            }
+        }
+    }
+
+    // This draws a red wireframe bubble in the Scene view so you can visually see the size of your punch!
+    void OnDrawGizmosSelected()
+    {
+        Vector3 hitCenter = transform.position + transform.forward * 1.0f + Vector3.up * 1.0f;
+        Gizmos.color = Color.red;
+        Gizmos.DrawWireSphere(hitCenter, attackRange);
+    }
+
     public void Jump()
     {
         if (controller.isGrounded && !isAttacking)
         {
             velocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
-            
+
             WeaponManager wpManager = GetComponent<WeaponManager>();
             if (wpManager == null) wpManager = FindObjectOfType<WeaponManager>();
 
