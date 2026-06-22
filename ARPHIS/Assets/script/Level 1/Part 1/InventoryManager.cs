@@ -1,13 +1,21 @@
-using System.Collections;
+﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
 public class InventoryManager : MonoBehaviour
 {
+    // ==========================================
+    // 🎒 CORE INVENTORY DATA
+    // ==========================================
     [Header("UI Grid Slots")]
+    [Tooltip("The UI Images used to display items in the player's bag.")]
     public List<Image> inventorySlots = new List<Image>();
-    private List<ArtifactFragment> collectedItems = new List<ArtifactFragment>();
+
+    // 🔥 CRITICAL RULE: This list MUST ONLY contain Artifact Fragments!
+    // Because this is a List of "ArtifactFragment", tools like the Chisel 
+    // cannot be added here, ensuring your puzzle tray stays perfectly clean.
+    public List<ArtifactFragment> collectedItems = new List<ArtifactFragment>();
 
     [Header("Drop Settings")]
     public Transform playerTransform;
@@ -16,8 +24,9 @@ public class InventoryManager : MonoBehaviour
     public GameObject warningMessageUI;
 
     // ==========================================
-    // QUEST ITEMS FOR MANLILILOK
+    // 🛠️ QUEST TOOLS (KEPT SEPARATE)
     // ==========================================
+    // Notice how these are just simple true/false switches, not actual items in the list.
     [Header("Quest Status")]
     public bool hasChisel = false;
     public bool hasWoodGlue = false;
@@ -34,65 +43,76 @@ public class InventoryManager : MonoBehaviour
         Debug.Log("Quest Item Got: Wood Glue!");
     }
 
-    // --- NEW: Stage 1 Check (Fragments Only) ---
-    // The NPC script uses this to see if you have found all 5 pieces yet.
+    // ==========================================
+    // 🔍 NPC APPRAISAL & PROGRESS CHECKS
+    // ==========================================
+
+    // Stage 1 Check: The NPC uses this to see if you have exactly 4 puzzle pieces.
     public bool HasAllFragments()
     {
         return collectedItems.Count >= 4;
     }
 
-    // --- NEW: Stage 2 Check (Tools Only) ---
-    // The NPC script uses this to see if you found the chisel and glue.
+    // Stage 2 Check: The NPC uses this to see if you found both tools.
     public bool HasChiselAndGlue()
     {
         return hasChisel && hasWoodGlue;
     }
 
-    // --- Original Check (Kept for safety) ---
+    // Final Check: Are all requirements met to start the puzzle?
     public bool HasAllPuzzleRequirements()
     {
-        // Requires 5 fragments AND both tools all at once.
         return (collectedItems.Count >= 4 && hasChisel && hasWoodGlue);
     }
-    // ==========================================
+
+    // Appraisal Check: Paeng scans the bag to make sure none of the 4 pieces are fakes.
+    public bool AreAllFragmentsReal()
+    {
+        foreach (ArtifactFragment item in collectedItems)
+        {
+            if (item.isRealArtifact == false)
+            {
+                Debug.Log("Appraisal Failed: A fake fragment was found in the inventory!");
+                return false;
+            }
+        }
+        Debug.Log("Appraisal Passed: All fragments are 100% real!");
+        return true;
+    }
 
     public int GetCurrentItemCount()
     {
         return collectedItems.Count;
     }
 
+    // ==========================================
+    // ➕ ADDING & DROPPING ITEMS
+    // ==========================================
     public bool AddItemToInventory(ArtifactFragment itemData)
     {
-        // Safety Net: If full, trigger the visual warning and block the item!
+        // Safety Net: Block the player from picking up a 5th item!
         if (collectedItems.Count >= 4)
         {
             Debug.LogWarning("Inventory limit reached! Cannot add more items.");
 
-            // Trigger the pop-up if we linked the image
             if (warningMessageUI != null)
             {
-                StopAllCoroutines(); // Resets the timer if the player spams the click button
+                StopAllCoroutines(); // Reset timer if they spam the click button
                 StartCoroutine(ShowWarningRoutine());
             }
-
-            return false;
+            return false; // Tells the street item NOT to destroy itself
         }
 
+        // Add the item to the master list and visually update the UI
         collectedItems.Add(itemData);
         UpdateInventoryUI();
-        return true;
+        return true; // Tells the street item it was successfully picked up
     }
 
-    // --- The Timer Function ---
     private IEnumerator ShowWarningRoutine()
     {
-        // 1. Turn the PNG ON
         warningMessageUI.SetActive(true);
-
-        // 2. Wait for exactly 2.5 seconds
         yield return new WaitForSeconds(2.5f);
-
-        // 3. Turn the PNG back OFF
         warningMessageUI.SetActive(false);
     }
 
@@ -100,26 +120,34 @@ public class InventoryManager : MonoBehaviour
     {
         if (collectedItems.Contains(itemToRemove))
         {
+            // 1. Remove it from the internal data list
             collectedItems.Remove(itemToRemove);
 
+            // 2. Physically teleport the 3D model back to the street in front of the player
             if (playerTransform != null)
             {
                 itemToRemove.transform.position = playerTransform.position + (playerTransform.forward * 1.5f) + new Vector3(0, 0.5f, 0);
             }
 
+            // 3. Turn the 3D model back on and refresh the UI
             itemToRemove.gameObject.SetActive(true);
             UpdateInventoryUI();
         }
     }
 
+    // ==========================================
+    // 🖼️ UI SYNC LOGIC
+    // ==========================================
     private void UpdateInventoryUI()
     {
         for (int i = 0; i < inventorySlots.Count; i++)
         {
+            // Grab the script sitting on the physical UI slot
             InventorySlotUI slotBrain = inventorySlots[i].transform.parent.GetComponent<InventorySlotUI>();
 
             if (i < collectedItems.Count)
             {
+                // If we have an item for this slot, turn the picture on and feed it data!
                 inventorySlots[i].sprite = collectedItems[i].inventoryIcon;
                 inventorySlots[i].enabled = true;
                 slotBrain.storedFragment = collectedItems[i];
@@ -127,6 +155,7 @@ public class InventoryManager : MonoBehaviour
             }
             else
             {
+                // If this slot is empty, hide the picture and clear its memory.
                 inventorySlots[i].sprite = null;
                 inventorySlots[i].enabled = false;
                 slotBrain.storedFragment = null;

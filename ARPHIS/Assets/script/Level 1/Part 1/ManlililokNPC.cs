@@ -10,9 +10,6 @@ public class ManlililokNPC : MonoBehaviour
     public DialogueManager dialogueManager;
     public GameObject puzzleCutsceneUI;
 
-    // ==========================================
-    // NEW: The tools that will spawn!
-    // ==========================================
     [Header("Quest Objects to Reveal")]
     [Tooltip("Drag the Chisel 3D object from the Hierarchy here.")]
     public GameObject chiselObject;
@@ -51,32 +48,38 @@ public class ManlililokNPC : MonoBehaviour
             bool hasFragments = inventory.HasAllFragments();
             bool hasTools = inventory.HasChiselAndGlue();
 
-            // STAGE 3: Player has Fragments AND Tools
-            if (hasFragments && hasTools)
+            // STAGE 2 & 3: The player brought back 4 fragments...
+            if (hasFragments)
             {
-                dialogueManager.StartDialogue(successConversation);
-            }
-            // STAGE 2: Player has 5 Fragments, but NO Tools yet
-            else if (hasFragments && !hasTools)
-            {
-                if (hasGivenToolQuest == false)
+                // STAGE 3: Player has Fragments AND Tools
+                if (hasTools)
                 {
-                    // 1. Play the long story about Baticulin wood
-                    dialogueManager.StartDialogue(introConversation);
-
-                    // 2. REVEAL THE TOOLS! (Make them appear in the world)
-                    if (chiselObject != null) chiselObject.SetActive(true);
-                    if (woodGlueObject != null) woodGlueObject.SetActive(true);
-
-                    hasGivenToolQuest = true;
+                    //  TRAP SET: Let them play the puzzle NO MATTER WHAT! 
+                    // (The PuzzleManager will handle the fake check at the end)
+                    dialogueManager.StartDialogueAndOpenPanel(successConversation, puzzleCutsceneUI);
                 }
+                // STAGE 2: Player has Fragments, but NO Tools yet
                 else
                 {
-                    // Reminder
-                    dialogueManager.StartDialogue(missingToolsReminderConversation);
+                    if (hasGivenToolQuest == false)
+                    {
+                        // 1. Play the long story about Baticulin wood
+                        dialogueManager.StartDialogue(introConversation);
+
+                        // 2. REVEAL THE TOOLS! (Make them appear in the world)
+                        if (chiselObject != null) chiselObject.SetActive(true);
+                        if (woodGlueObject != null) woodGlueObject.SetActive(true);
+
+                        hasGivenToolQuest = true;
+                    }
+                    else
+                    {
+                        // Reminder
+                        dialogueManager.StartDialogue(missingToolsReminderConversation);
+                    }
                 }
             }
-            // STAGE 1: Player DOES NOT have the 5 fragments yet
+            // STAGE 1: Player DOES NOT have 4 fragments yet
             else
             {
                 dialogueManager.StartDialogue(missingFragmentsConversation);
