@@ -16,7 +16,11 @@ public class EnemyAI : MonoBehaviour
     public float timeBetweenAttacks = 1.5f;
     private float lastAttackTime;
 
+    [Header("Coin Reward")]
+    public int coinReward = 5; // How many coins this enemy gives when defeated
+
     private NavMeshAgent agent;
+    private CharacterHealth enemyHealth; // Reference to enemy's health
 
     [Header("Animation Setup")]
     public Animator enemyAnim; // Drag your Enemy's Animator here in the Inspector!
@@ -24,6 +28,7 @@ public class EnemyAI : MonoBehaviour
     void Start()
     {
         agent = GetComponent<NavMeshAgent>();
+        enemyHealth = GetComponent<CharacterHealth>(); // Get enemy health
 
         // Auto-find the player if you forget to drag them into the slot
         if (player == null) player = GameObject.FindGameObjectWithTag("Player").transform;
@@ -35,10 +40,25 @@ public class EnemyAI : MonoBehaviour
 
         // Tell the AI to hit the brakes right before it crashes into the player
         agent.stoppingDistance = attackRange - 0.2f;
+
+        // Subscribe to the death event if enemy has CharacterHealth
+        if (enemyHealth != null)
+        {
+            // Assuming CharacterHealth has an OnDeath event
+            // If not, we'll use OnDestroy or check in Update
+        }
     }
 
     void Update()
     {
+        // Check if enemy is dead
+        if (enemyHealth != null && enemyHealth.currentHealth <= 0)
+        {
+            // Enemy is dead, stop AI
+            agent.isStopped = true;
+            return;
+        }
+
         // Don't do anything if the player is missing
         if (player == null) return;
 
@@ -105,6 +125,36 @@ public class EnemyAI : MonoBehaviour
             }
 
             lastAttackTime = Time.time;
+        }
+    }
+
+    // ==========================================
+    // 🪙 COIN REWARD SYSTEM
+    // ==========================================
+    // Call this method when the enemy is defeated (from CharacterHealth)
+    public void AwardCoins()
+    {
+        // Find the CoinManager in the scene
+        CoinManager coinManager = FindObjectOfType<CoinManager>();
+        
+        if (coinManager != null)
+        {
+            coinManager.AddCoins(coinReward);
+            Debug.Log($"🪙 Enemy defeated! +{coinReward} coins!");
+        }
+        else
+        {
+            Debug.LogWarning("⚠️ CoinManager not found in scene! Coins not added.");
+        }
+    }
+
+    // Called when enemy dies (if you use OnDestroy)
+    void OnDestroy()
+    {
+        // Only award coins if enemy was killed (not if scene is unloading)
+        if (enemyHealth != null && enemyHealth.currentHealth <= 0)
+        {
+            AwardCoins();
         }
     }
 }

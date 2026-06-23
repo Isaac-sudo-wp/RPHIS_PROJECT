@@ -11,11 +11,8 @@ public class PlayerMovement : MonoBehaviour
     public Animator anim;
 
     [Header("Camera Pivot Setup (For OTS Aiming)")]
-    [Tooltip("I-drag dito ang 'CameraPivot' object mo galing sa hierarchy.")]
     public Transform cameraPivotTransform;
-    [Tooltip("Normal camera center offset kung walang baril.")]
     public Vector3 normalCameraLocalOffset = new Vector3(0f, 0f, 0f);
-    [Tooltip("Over-the-shoulder camera offset kapag naka-pistol mode.")]
     public Vector3 pistolAimCameraOffset = new Vector3(0.75f, 0.2f, -0.5f);
 
     [Header("UI Elements")]
@@ -35,17 +32,15 @@ public class PlayerMovement : MonoBehaviour
     public float rechargeTimeInSeconds = 60f;
 
     [Header("Combat Settings")]
-    [Tooltip("How far forward the attack reaches.")]
     public float attackRange = 1f;
-    [Tooltip("How much damage a melee attack does.")]
     public int attackDamage = 10;
-    [Tooltip("Set this to your 'Enemy' layer so you only hit enemies!")]
     public LayerMask enemyLayer;
 
     private float maxStamina;
     private float currentStamina;
     private bool isRunning = false;
     private bool isExhausted = false;
+    private bool isRunModeActive = false; // NEW: Tracks if run button is toggled ON
     private Vector3 velocity;
     private float actualRunTime = 0f;
     private float staminaDrainRate;
@@ -59,8 +54,6 @@ public class PlayerMovement : MonoBehaviour
 
     void Start()
     {
-
-        // Add this line to the very top of your Start function
         Debug.Log("PLAYER SPAWNED AT: " + transform.position);
         maxStamina = runTimeInSeconds;
         staminaDrainRate = 1f;
@@ -73,7 +66,6 @@ public class PlayerMovement : MonoBehaviour
             staminaSlider.value = currentStamina;
         }
 
-        // I-save ang default na posisyon ng camera pivot kung hindi pa manually na-set
         if (cameraPivotTransform != null && normalCameraLocalOffset == Vector3.zero)
         {
             normalCameraLocalOffset = cameraPivotTransform.localPosition;
@@ -82,8 +74,6 @@ public class PlayerMovement : MonoBehaviour
 
     void Update()
     {
-
-
         if (joystick == null || controller == null || camTransform == null || anim == null)
             return;
 
@@ -116,13 +106,11 @@ public class PlayerMovement : MonoBehaviour
         // ========== DYNAMIC CAMERA POSITION & PLAYER ROTATION SYNC ==========
         if (wpManager != null && wpManager.currentWeapon == WeaponManager.WeaponType.Pistol)
         {
-            // 1. Swabe at automatic na i-blend ang CameraPivot papunta sa Over-the-shoulder look (Pangalawang larawan)
             if (cameraPivotTransform != null)
             {
                 cameraPivotTransform.localPosition = Vector3.Lerp(cameraPivotTransform.localPosition, pistolAimCameraOffset, Time.deltaTime * 5f);
             }
 
-            // 2. ROTATION SYNC: Kusa at automatic na haharap si player kung saan nakatingin ang camera kapag iginalaw ito
             Vector3 cameraForwardDirection = camTransform.forward;
             cameraForwardDirection.y = 0f;
             if (cameraForwardDirection.sqrMagnitude > 0.001f)
@@ -133,7 +121,6 @@ public class PlayerMovement : MonoBehaviour
         }
         else
         {
-            // Ibalik ang CameraPivot sa normal nitong gitnang posisyon kapag binitawan ang baril
             if (cameraPivotTransform != null)
             {
                 cameraPivotTransform.localPosition = Vector3.Lerp(cameraPivotTransform.localPosition, normalCameraLocalOffset, Time.deltaTime * 5f);
@@ -144,18 +131,22 @@ public class PlayerMovement : MonoBehaviour
         float z = joystick.Vertical;
         bool isJoystickMoving = (Mathf.Abs(x) > 0.05f || Mathf.Abs(z) > 0.05f);
 
+        // ========== RUN LOGIC: Only run if BOTH joystick is moving AND run mode is active ==========
+        bool shouldRun = isRunModeActive && isJoystickMoving && !isExhausted;
+
         // ========== STAMINA MANAGEMENT ==========
-        if (isRunning && isJoystickMoving && !isExhausted)
+        if (shouldRun)
         {
             currentStamina -= staminaDrainRate * Time.deltaTime;
             if (currentStamina <= 0f)
             {
                 currentStamina = 0f;
                 isExhausted = true;
-                isRunning = false;
+                isRunModeActive = false; // Turn off run mode when exhausted
+                Debug.Log("⚠️ Stamina exhausted! Run mode cancelled.");
             }
         }
-        else if (!isRunning && currentStamina < maxStamina)
+        else if (!isRunModeActive && currentStamina < maxStamina)
         {
             currentStamina += rechargeRate * Time.deltaTime;
         }
@@ -170,9 +161,9 @@ public class PlayerMovement : MonoBehaviour
         forward.Normalize(); right.Normalize();
 
         Vector3 moveDirection = (forward * z) + (right * x);
-        float currentSpeed = (isRunning && !isExhausted && isJoystickMoving) ? runSpeed : walkSpeed;
+        float currentSpeed = shouldRun ? runSpeed : walkSpeed;
 
-        // ========== MOVEMENT EXECUTION & CODE-BASED CROSSFADE ==========
+        // ========== MOVEMENT EXECUTION ==========
         if (isJoystickMoving && !isAttacking)
         {
             bool runningState = (currentSpeed == runSpeed);
@@ -228,7 +219,6 @@ public class PlayerMovement : MonoBehaviour
             controller.Move(moveDirection * currentSpeed * Time.deltaTime);
         }
 
-        // ANTI-LAG RE-ALIGNMENT
         if (anim != null)
         {
             anim.transform.localPosition = new Vector3(0f, anim.transform.localPosition.y, 0f);
@@ -253,6 +243,7 @@ public class PlayerMovement : MonoBehaviour
         controller.Move(velocity * Time.deltaTime);
     }
 
+    // ========== COMBAT METHODS ==========
     public void PerformPunching() { if (anim != null && !isAttacking) { StartCombatLock(1.8f); anim.SetTrigger("PunchingTrigger"); } }
     public void PerformKick() { if (anim != null && !isAttacking) { StartCombatLock(1.5f); anim.SetTrigger("KickTrigger"); } }
     public void PerformComboPunch() { if (anim != null && !isAttacking) { StartCombatLock(1.8f); anim.SetTrigger("ComboPunch"); } }
@@ -268,38 +259,74 @@ public class PlayerMovement : MonoBehaviour
         currentPlayingLocomotionState = "";
     }
 
-    // ========== THIS IS THE ANIMATION EVENT FUNCTION ==========
     public void DealMeleeDamage()
     {
-        // 1. Calculate a point slightly in front of the player's chest
         Vector3 hitCenter = transform.position + transform.forward * 1.0f + Vector3.up * 1.0f;
-
-        // 2. Create an invisible sphere that finds anything on the Enemy Layer
         Collider[] hitEnemies = Physics.OverlapSphere(hitCenter, attackRange, enemyLayer);
-
-        // 3. Keep track of who we already hit so we don't damage them twice!
         System.Collections.Generic.List<CharacterHealth> alreadyHit = new System.Collections.Generic.List<CharacterHealth>();
 
-        // 4. Apply damage to everyone caught in the sphere
         foreach (Collider enemy in hitEnemies)
         {
             CharacterHealth enemyHealth = enemy.GetComponent<CharacterHealth>();
-
-            // If they have health, AND we haven't damaged them yet this punch...
             if (enemyHealth != null && !alreadyHit.Contains(enemyHealth))
             {
                 enemyHealth.TakeDamage(attackDamage);
-                alreadyHit.Add(enemyHealth); // Add them to the list so they don't get double-hit
+                alreadyHit.Add(enemyHealth);
             }
         }
     }
 
-    // This draws a red wireframe bubble in the Scene view so you can visually see the size of your punch!
     void OnDrawGizmosSelected()
     {
         Vector3 hitCenter = transform.position + transform.forward * 1.0f + Vector3.up * 1.0f;
         Gizmos.color = Color.red;
         Gizmos.DrawWireSphere(hitCenter, attackRange);
+    }
+
+    // ==========================================
+    // 🔥 RUN TOGGLE - TURNS RUN MODE ON/OFF
+    // ==========================================
+    public void StartRunning() 
+    { 
+        // Toggle run mode ON/OFF
+        if (!isExhausted && currentStamina > 0.5f && !isAttacking)
+        {
+            isRunModeActive = !isRunModeActive; // Toggle the mode
+            
+            // Update animator
+            if (anim != null)
+            {
+                // Only show running animation if actually running (joystick moving)
+                if (isRunModeActive)
+                {
+                    Debug.Log($"🏃 Run mode ACTIVATED! Press again to cancel.");
+                }
+                else
+                {
+                    anim.SetBool("isRunning", false);
+                    anim.SetBool("isWalking", false);
+                    Debug.Log($"🚶 Run mode CANCELLED! Stamina saved.");
+                }
+            }
+        }
+        else if (isExhausted)
+        {
+            Debug.Log("❌ Cannot run - Stamina exhausted! Waiting for recharge...");
+            isRunModeActive = false;
+            if (anim != null) anim.SetBool("isRunning", false);
+        }
+        else if (currentStamina <= 0.5f)
+        {
+            Debug.Log($"❌ Cannot run - Stamina too low! ({currentStamina:F1}/{maxStamina})");
+            isRunModeActive = false;
+            if (anim != null) anim.SetBool("isRunning", false);
+        }
+    }
+
+    public void StopRunning() 
+    { 
+        // Called on Pointer Up (button release)
+        // For TOGGLE mode, we do nothing here.
     }
 
     public void Jump()
@@ -355,7 +382,7 @@ public class PlayerMovement : MonoBehaviour
 
             if (isMoving)
             {
-                bool runningState = (isRunning && !isExhausted);
+                bool runningState = (isRunModeActive && !isExhausted);
                 string targetState = runningState ? statePrefix + " Run" : statePrefix + " Walk";
                 currentPlayingLocomotionState = targetState;
                 anim.CrossFadeInFixedTime(targetState, 0.15f, 0, 0f);
@@ -369,8 +396,6 @@ public class PlayerMovement : MonoBehaviour
         weaponJumpWatcherCoroutine = null;
     }
 
-    public void StartRunning() { if (!isExhausted && currentStamina > 0.5f && !isAttacking) isRunning = true; }
-    public void StopRunning() { if (isRunning) isRunning = false; }
-    public bool IsRunning() { return isRunning && !isExhausted; }
+    public bool IsRunning() { return isRunModeActive && !isExhausted; }
     public float GetStaminaPercent() { return currentStamina / maxStamina; }
 }
