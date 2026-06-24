@@ -11,6 +11,9 @@ public class CharacterHealth : MonoBehaviour
     [Header("UI Setup")]
     public Slider healthBarUI;
 
+    [Header("Loot Drops")]
+    public GameObject coinPrefab;
+
     [Header("Animation Setup")]
     public Animator myAnimator;
 
@@ -18,27 +21,20 @@ public class CharacterHealth : MonoBehaviour
     [Tooltip("Drag the DamageFeedback script here (or leave empty if not used)")]
     public DamageFeedback damageFeedback;
 
-    private bool isDead = false;
-
-    // Event for when the character dies
-    public System.Action OnDeath;
-
     void Start()
     {
         currentHealth = maxHealth;
         UpdateHealthBar();
-        isDead = false;
     }
 
     public void TakeDamage(int damageAmount)
     {
-        if (isDead) return;
-
         currentHealth -= damageAmount;
         Debug.Log(gameObject.name + " took " + damageAmount + " damage! Remaining HP: " + currentHealth);
 
         UpdateHealthBar();
 
+        // GUIDE: Play "Get Hit" animation and trigger Red Flash feedback
         if (myAnimator != null)
         {
             myAnimator.SetTrigger("GetHit");
@@ -53,7 +49,7 @@ public class CharacterHealth : MonoBehaviour
         {
             Die();
         }
-    }
+    } // <--- THIS is the bracket that was missing! It closes the TakeDamage function.
 
     void UpdateHealthBar()
     {
@@ -65,16 +61,7 @@ public class CharacterHealth : MonoBehaviour
 
     void Die()
     {
-        if (isDead) return;
-        isDead = true;
-
         Debug.Log(gameObject.name + " has been defeated!");
-
-        // 🔥 TRIGGER THE DEATH EVENT - EnemyAI will listen to this!
-        if (OnDeath != null)
-        {
-            OnDeath.Invoke();
-        }
 
         // 1. Play the Death Animation
         if (myAnimator != null)
@@ -82,11 +69,17 @@ public class CharacterHealth : MonoBehaviour
             myAnimator.SetTrigger("Die");
         }
 
-        // 2. Turn off EnemyAI
-        MonoBehaviour enemyAIBehaviour = GetComponent("EnemyAI") as MonoBehaviour;
-        if (enemyAIBehaviour != null) enemyAIBehaviour.enabled = false;
+        // 2. Drop the Loot
+        if (coinPrefab != null)
+        {
+            Instantiate(coinPrefab, transform.position + new Vector3(0, 1f, 0), Quaternion.identity);
+        }
 
-        // 3. Safely stop NavMeshAgent
+        // 3. Turn off EnemyAI (Fixes Red NavMesh Errors)
+        MonoBehaviour enemyAI = GetComponent("EnemyAI") as MonoBehaviour;
+        if (enemyAI != null) enemyAI.enabled = false;
+
+        // 4. Safely stop NavMeshAgent
         UnityEngine.AI.NavMeshAgent agent = GetComponent<UnityEngine.AI.NavMeshAgent>();
         if (agent != null)
         {
@@ -94,30 +87,13 @@ public class CharacterHealth : MonoBehaviour
             agent.enabled = false;
         }
 
-        // 4. Turn off collision
-        Collider col = GetComponent<Collider>();
-        if (col != null) col.enabled = false;
+        // 5. Turn off collision
+        if (GetComponent<Collider>() != null) GetComponent<Collider>().enabled = false;
 
-        // 5. Shut down script
+        // 6. Shut down script
         this.enabled = false;
 
-        // 6. Destroy after 3 seconds
+        // 7. Destroy after 3 seconds
         Destroy(gameObject, 3f);
-    }
-
-    public void Heal(int healAmount)
-    {
-        if (isDead) return;
-        
-        currentHealth = Mathf.Min(currentHealth + healAmount, maxHealth);
-        UpdateHealthBar();
-        Debug.Log($"{gameObject.name} healed for {healAmount}! HP: {currentHealth}/{maxHealth}");
-    }
-
-    public void ResetHealth()
-    {
-        currentHealth = maxHealth;
-        isDead = false;
-        UpdateHealthBar();
     }
 }

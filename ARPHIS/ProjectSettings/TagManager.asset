@@ -6,7 +6,6 @@ TagManager:
   tags:
   - FxTemporaire
   - Enemy
-  - Fragments
   layers:
   - Default
   - TransparentFX
@@ -16,8 +15,8 @@ TagManager:
   - UI
   - HologramMap
   - Enemy
-  - Fragments
-  - Player
+  - 
+  - 
   - 
   - 
   - 
