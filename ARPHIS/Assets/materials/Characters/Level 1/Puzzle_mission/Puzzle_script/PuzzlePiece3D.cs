@@ -4,57 +4,85 @@ using UnityEngine;
 [RequireComponent(typeof(Collider))]
 public class PuzzlePiece3D : MonoBehaviour
 {
-    // ==========================================
-    // ⚙️ INSPECTOR SETTINGS
-    // ==========================================
     [Header("Snap Settings")]
-    [Tooltip("How close the player must drag the piece before it locks into the hole.")]
     public float snapDistance = 0.5f;
 
+    [Header("Rotation Settings")]
+    public float rotationSpeed = 5f;
+
     [Header("System Links")]
-    [Tooltip("Drag the PuzzleManager object here so this piece can send data to the UI!")]
     public PuzzleManager manager;
 
-    // ==========================================
-    // 🧠 HIDDEN DATA & NEW MEMORY SYSTEM
-    // ==========================================
     [HideInInspector] public ArtifactFragment fragmentData;
     [HideInInspector] public bool isSnapped = false;
 
-    // 🔥 NEW: Tracks where this piece ACTUALLY belongs based on the Manager's sorting
-    [HideInInspector] public Transform correctSnapPoint;
+    [Header("Snap Points (Drag from Hierarchy)")]
+    public Transform correctSnapPoint;
 
-    // 🔥 NEW: Tracks where the player decided to drop it on the board
     [HideInInspector] public Transform currentSnapPoint;
 
     private Vector3 startLocalPos;
     private Quaternion startLocalRot;
+    private Transform startParent;
     private Vector3 mOffset;
     private float mZCoord;
     private GameObject spawned3DModel;
 
-    // ==========================================
-    // 🎬 STARTUP LOGIC
-    // ==========================================
     void Start()
     {
-        // Memorize exactly where this tray slot is so the piece can snap back here if dropped incorrectly.
         startLocalPos = transform.localPosition;
         startLocalRot = transform.localRotation;
+        startParent = transform.parent;
+
+        if (correctSnapPoint == null)
+            Debug.LogWarning($"⚠️ {gameObject.name} has NO correctSnapPoint assigned!");
+        
+        // 🔥 Auto-find artifact container if manager doesn't have it
+        if (manager != null && manager.artifactContainer == null)
+        {
+            // Try to find PaeteFragMissing in the scene
+            GameObject container = GameObject.Find("PaeteFragMissing");
+            if (container != null)
+            {
+                manager.artifactContainer = container.transform;
+                Debug.Log($"✅ Auto-found artifactContainer: {container.name}");
+            }
+        }
     }
 
-    // ==========================================
-    // 🖱️ MOUSE INTERACTION: CLICK
-    // ==========================================
+    public int GetFragmentNumber()
+    {
+        if (fragmentData == null) return 0;
+        string gameObjectName = gameObject.name;
+        if (gameObjectName.Contains("1")) return 1;
+        else if (gameObjectName.Contains("2")) return 2;
+        else if (gameObjectName.Contains("3")) return 3;
+        else if (gameObjectName.Contains("4")) return 4;
+        else return 0;
+    }
+
+    public bool IsFragmentReal()
+    {
+        if (fragmentData == null) return false;
+        return fragmentData.isRealArtifact;
+    }
+
+    public string GetFragmentName()
+    {
+        if (fragmentData == null) return "Unknown";
+        return fragmentData.fragmentName;
+    }
+
     void OnMouseDown()
     {
         if (isSnapped) return;
 
-        mZCoord = Camera.main.WorldToScreenPoint(gameObject.transform.position).z;
-        mOffset = gameObject.transform.position - GetMouseAsWorldPoint();
+        mZCoord = Camera.main.WorldToScreenPoint(transform.position).z;
+        mOffset = transform.position - GetMouseAsWorldPoint();
 
         if (manager != null && fragmentData != null)
         {
+            Debug.Log($"🖱️ Clicked: {gameObject.name} - {GetFragmentName()} (#{GetFragmentNumber()}, Real: {IsFragmentReal()})");
             manager.InspectFragment(fragmentData);
         }
     }
@@ -66,36 +94,44 @@ public class PuzzlePiece3D : MonoBehaviour
         return Camera.main.ScreenToWorldPoint(mousePoint);
     }
 
-    // ==========================================
-    // 🖱️ MOUSE INTERACTION: DRAG
-    // ==========================================
     void OnMouseDrag()
     {
         if (isSnapped) return;
         transform.position = GetMouseAsWorldPoint() + mOffset;
+
+        if (Input.GetMouseButton(1))
+        {
+            float rotationInput = Input.GetAxis("Mouse X") * rotationSpeed * Time.deltaTime;
+            transform.Rotate(Vector3.up, -rotationInput, Space.World);
+        }
+
+        float scrollInput = Input.GetAxis("Mouse ScrollWheel");
+        if (Mathf.Abs(scrollInput) > 0.01f)
+        {
+            transform.Rotate(Vector3.up, scrollInput * 100f * rotationSpeed * Time.deltaTime, Space.World);
+        }
     }
 
-    // ==========================================
-    // 🖱️ MOUSE INTERACTION: DROP (🔥 THE UPGRADE)
-    // ==========================================
     void OnMouseUp()
     {
         if (isSnapped) return;
+
+        if (correctSnapPoint == null)
+        {
+            Debug.LogError($"❌ {gameObject.name} has NO correctSnapPoint! Returning.");
+            ResetPosition();
+            return;
+        }
 
         Transform closestSnap = null;
         float minDistance = snapDistance;
 
         if (manager != null)
         {
-            // 🔥 SEARCH THE BOARD: Ask the Manager for a list of ALL available holes
             foreach (Transform snap in manager.GetAllSnapPoints())
             {
                 if (snap == null) continue;
-
-                // Measure the distance between this piece and the hole we are currently checking
                 float distance = Vector3.Distance(transform.position, snap.position);
-
-                // Is it close enough? AND is the hole currently empty?
                 if (distance <= minDistance && !manager.IsSnapPointOccupied(snap))
                 {
                     minDistance = distance;
@@ -104,40 +140,73 @@ public class PuzzlePiece3D : MonoBehaviour
             }
         }
 
-        // If we successfully dropped it near an empty hole...
         if (closestSnap != null)
         {
-            // Magnetically snap into place!
-            transform.position = closestSnap.position;
-            transform.rotation = closestSnap.rotation;
-            isSnapped = true;
+            if (closestSnap == correctSnapPoint)
+            {
+                transform.position = closestSnap.position;
+                transform.rotation = closestSnap.rotation;
+                isSnapped = true;
+                currentSnapPoint = closestSnap;
 
-            // 🔥 GRADE ME: Tell the manager exactly which hole the player chose!
-            currentSnapPoint = closestSnap;
+                // 🔥 FIX: Parent to artifact container so it rotates with PaeteFragMissing
+                Transform container = GetArtifactContainer();
+                if (container != null)
+                {
+                    transform.SetParent(container);
+                    Debug.Log($"✅ {gameObject.name} snapped and joined {container.name} rotation!");
+                }
+                else
+                {
+                    Debug.LogWarning("⚠️ artifactContainer is NULL! Fragment will NOT rotate with container.");
+                }
 
-            // Tell the manager to check if the game is over
-            if (manager != null) manager.CheckWinCondition();
+                if (manager != null) manager.CheckWinCondition();
+            }
+            else
+            {
+                Debug.Log($"❌ Wrong snap point! Returning to tray.");
+                ResetPosition();
+            }
         }
         else
         {
-            // Dropped too far away from ANY hole, or the hole was full? Send it back to the tray.
+            Debug.Log($"↩️ Dropped too far. Returning to tray.");
             ResetPosition();
         }
     }
 
+    // 🔥 Helper to find artifact container
+    private Transform GetArtifactContainer()
+    {
+        if (manager != null && manager.artifactContainer != null)
+            return manager.artifactContainer;
+
+        // Try to find by name
+        GameObject container = GameObject.Find("PaeteFragMissing");
+        if (container != null)
+            return container.transform;
+
+        // Try to find by tag
+        GameObject tagged = GameObject.FindGameObjectWithTag("ArtifactContainer");
+        if (tagged != null)
+            return tagged.transform;
+
+        return null;
+    }
+
     public void ResetPosition()
     {
+        if (startParent != null)
+            transform.SetParent(startParent);
+
         transform.localPosition = startLocalPos;
         transform.localRotation = startLocalRot;
         isSnapped = false;
-
-        // 🔥 Clear the player's choice if the piece is sent back to the tray
         currentSnapPoint = null;
+        Debug.Log($"🔄 {gameObject.name} reset to original position.");
     }
 
-    // ==========================================
-    // 🔥 DYNAMIC 3D SPAWNING SYSTEM
-    // ==========================================
     public void Spawn3DModel(GameObject newPrefab)
     {
         if (spawned3DModel != null) Destroy(spawned3DModel);
@@ -145,41 +214,27 @@ public class PuzzlePiece3D : MonoBehaviour
         if (newPrefab != null)
         {
             spawned3DModel = Instantiate(newPrefab, transform);
-
             spawned3DModel.transform.localPosition = Vector3.zero;
             spawned3DModel.transform.localRotation = Quaternion.identity;
 
             Collider[] childColliders = spawned3DModel.GetComponentsInChildren<Collider>();
             foreach (Collider col in childColliders) Destroy(col);
 
-            // 🔥 RESTORED OUR COROUTINE FIX: This prevents the models from turning invisible!
             StartCoroutine(ForceVisibilityRoutine(spawned3DModel));
         }
     }
 
-    // ==========================================
-    // 🔥 THE ONE-FRAME DELAY ASSASSIN 
-    // ==========================================
     private IEnumerator ForceVisibilityRoutine(GameObject model)
     {
-        // WAIT 1 FRAME: This allows the rogue scripts to run their "hide" code first.
         yield return new WaitForEndOfFrame();
 
         if (model != null)
         {
-            // NOW we assassinate all scripts on the model so they can never run again
             MonoBehaviour[] allScripts = model.GetComponentsInChildren<MonoBehaviour>(true);
-            foreach (MonoBehaviour script in allScripts)
-            {
-                Destroy(script);
-            }
+            foreach (MonoBehaviour script in allScripts) Destroy(script);
 
-            // NOW we force the meshes back on, getting the final word!
             MeshRenderer[] renderers = model.GetComponentsInChildren<MeshRenderer>(true);
-            foreach (MeshRenderer mesh in renderers)
-            {
-                mesh.enabled = true;
-            }
+            foreach (MeshRenderer mesh in renderers) mesh.enabled = true;
         }
     }
 }

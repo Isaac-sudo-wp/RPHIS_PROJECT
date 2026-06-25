@@ -54,8 +54,10 @@ public class ManlililokNPC : MonoBehaviour
                 // STAGE 3: Player has Fragments AND Tools
                 if (hasTools)
                 {
-                    //  TRAP SET: Let them play the puzzle NO MATTER WHAT! 
-                    // (The PuzzleManager will handle the fake check at the end)
+                    // 🔥 FIX: Clear any existing callbacks before starting
+                    dialogueManager.ClearCallback();
+                    
+                    // Open the puzzle UI
                     dialogueManager.StartDialogueAndOpenPanel(successConversation, puzzleCutsceneUI);
                 }
                 // STAGE 2: Player has Fragments, but NO Tools yet
@@ -63,10 +65,13 @@ public class ManlililokNPC : MonoBehaviour
                 {
                     if (hasGivenToolQuest == false)
                     {
+                        // 🔥 FIX: Clear any existing callbacks
+                        dialogueManager.ClearCallback();
+                        
                         // 1. Play the long story about Baticulin wood
                         dialogueManager.StartDialogue(introConversation);
 
-                        // 2. REVEAL THE TOOLS! (Make them appear in the world)
+                        // 2. REVEAL THE TOOLS!
                         if (chiselObject != null) chiselObject.SetActive(true);
                         if (woodGlueObject != null) woodGlueObject.SetActive(true);
 
@@ -74,6 +79,9 @@ public class ManlililokNPC : MonoBehaviour
                     }
                     else
                     {
+                        // 🔥 FIX: Clear any existing callbacks
+                        dialogueManager.ClearCallback();
+                        
                         // Reminder
                         dialogueManager.StartDialogue(missingToolsReminderConversation);
                     }

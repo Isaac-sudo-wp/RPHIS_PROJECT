@@ -3,156 +3,199 @@ using UnityEngine.Events;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using TMPro;
+using System.Collections.Generic;
+using System.Linq;
 
 public class PuzzleManager : MonoBehaviour
 {
-    // ==========================================
-    // ⚙️ SYSTEM SETTINGS
-    // ==========================================
     [Header("Puzzle Setup")]
-    [Tooltip("The main Canvas panel that holds all the UI for the puzzle.")]
     public GameObject puzzleUIPanel;
-    [Tooltip("Drag the 4 empty paete containers from your Hierarchy here!")]
     public PuzzlePiece3D[] puzzlePieces;
 
-    // ==========================================
-    // 🔥 NEW: SMART SNAP POINTS
-    // ==========================================
+    [Header("Artifact Container")]
+    [Tooltip("Drag PaeteFragMissing here so snapped pieces rotate with it!")]
+    public Transform artifactContainer;
+
     [Header("Dynamic Snap Points")]
-    [Tooltip("Drag your actual SnapPoint objects from the hierarchy here so the code knows where the holes are!")]
     public Transform snapPoint1;
     public Transform snapPoint2;
     public Transform snapPoint3;
     public Transform snapPoint4;
 
-    // ==========================================
-    // 🏆 WIN/LOSS EVENTS
-    // ==========================================
     [Header("End Game Events")]
-    [Tooltip("What happens when the puzzle is finished perfectly (All REAL fragments)?")]
     public UnityEvent onPuzzleComplete;
-
-    [Tooltip("What happens when the puzzle is finished, but with FAKE fragments?")]
     public UnityEvent onPuzzleFailed;
 
-    // ==========================================
-    // 🖥️ UI & SCENE CONNECTIONS
-    // ==========================================
+    [Header("Manlililok End Dialogue")]
+    [Tooltip("Drag the DialogueManager here")]
+    public DialogueManager dialogueManager;
+    [Tooltip("Dialogue Manlililok says when puzzle is completed successfully")]
+    public DialogueLine[] successDialogue;
+    [Tooltip("Dialogue Manlililok says when puzzle fails")]
+    public DialogueLine[] failDialogue;
+    [Tooltip("Panel to open after success dialogue ends")]
+    public GameObject successPanel;
+    [Tooltip("Panel to open after fail dialogue ends")]
+    public GameObject failPanel;
+
     [Header("Button Screen Links")]
     public GameObject missionFailedPanel;
     public GameObject puzzle3DContainer;
     public GameObject inGamePanel;
     public string mainMenuSceneName = "MainMenu";
 
-    // ==========================================
-    // 🔍 INSPECTION PANEL UI
-    // ==========================================
     [Header("Inspection Panel")]
-    [Tooltip("The dark background panel that holds the text and image.")]
     public GameObject inspectPanel;
-    [Tooltip("The UI Image component that will show the 2D sprite.")]
     public Image inspectIcon;
-    [Tooltip("The TextMeshPro text that will show the fragment's name.")]
     public TextMeshProUGUI inspectName;
-    [Tooltip("The TextMeshPro text that will show the fragment's lore.")]
     public TextMeshProUGUI inspectDesc;
 
     private int snappedCount = 0;
+    private bool isEndTriggered = false;
 
-    // ==========================================
-    // 🔥 NEW: SNAP POINT HELPERS
-    // ==========================================
-    // This allows the 3D pieces to look at the board and find all available holes!
+    // 🔥 Auto-clean puzzle pieces array
+    private void CleanPuzzlePiecesArray()
+    {
+        if (puzzlePieces == null) return;
+        
+        var cleanList = new List<PuzzlePiece3D>();
+        foreach (var piece in puzzlePieces)
+        {
+            if (piece != null && !string.IsNullOrEmpty(piece.gameObject.name))
+            {
+                if (piece.gameObject.name.Contains("paete_"))
+                {
+                    cleanList.Add(piece);
+                }
+            }
+        }
+        
+        if (cleanList.Count < puzzlePieces.Length)
+        {
+            Debug.Log($"🧹 Cleaned puzzle pieces array: {puzzlePieces.Length} → {cleanList.Count}");
+            puzzlePieces = cleanList.ToArray();
+        }
+    }
+
     public Transform[] GetAllSnapPoints()
     {
         return new Transform[] { snapPoint1, snapPoint2, snapPoint3, snapPoint4 };
     }
 
-    // This prevents the player from cheating and putting two fragments in the same hole!
     public bool IsSnapPointOccupied(Transform pointToCheck)
     {
+        if (pointToCheck == null) return false;
+
         foreach (PuzzlePiece3D piece in puzzlePieces)
         {
-            if (piece.isSnapped && piece.currentSnapPoint == pointToCheck) return true;
+            if (piece != null && piece.isSnapped && piece.currentSnapPoint == pointToCheck)
+                return true;
         }
         return false;
     }
 
-    // ==========================================
-    // 🎬 STARTUP & DATA SYNC 
-    // ==========================================
     void OnEnable()
     {
-        // 1. THE BROOM: Clean out any old clones from the tray!
+        Debug.Log("🧩 PuzzleManager: OnEnable called!");
+        isEndTriggered = false;
+
+        // 🔥 Auto-clean the array
+        CleanPuzzlePiecesArray();
+
+        // Hide panels at start
+        if (successPanel != null) successPanel.SetActive(false);
+        if (failPanel != null) failPanel.SetActive(false);
+        if (missionFailedPanel != null) missionFailedPanel.SetActive(false);
+
+        if (artifactContainer == null)
+        {
+            GameObject container = GameObject.Find("PaeteFragMissing");
+            if (container != null)
+            {
+                artifactContainer = container.transform;
+                Debug.Log($"✅ Auto-found artifactContainer: {container.name}");
+            }
+        }
+
+        if (artifactContainer != null) artifactContainer.gameObject.SetActive(true);
+
         foreach (PuzzlePiece3D piece in puzzlePieces)
         {
+            if (piece == null) continue;
+
             foreach (Transform child in piece.transform)
-            {
                 Destroy(child.gameObject);
-            }
+
             piece.gameObject.SetActive(false);
+            piece.isSnapped = false;
+            piece.currentSnapPoint = null;
+            piece.correctSnapPoint = null;
+            piece.fragmentData = null;
+
+            if (artifactContainer != null && piece.transform.parent == artifactContainer)
+                piece.transform.SetParent(artifactContainer.parent);
         }
 
         if (puzzle3DContainer != null) puzzle3DContainer.SetActive(true);
 
         InventoryManager inventory = FindObjectOfType<InventoryManager>();
 
-        if (inventory != null && inventory.collectedItems.Count > 0)
+        if (inventory != null && inventory.collectedItems != null && inventory.collectedItems.Count > 0)
         {
-            for (int i = 0; i < puzzlePieces.Length; i++)
+            Debug.Log($"📦 Inventory has {inventory.collectedItems.Count} items");
+
+            int slotIndex = 0;
+
+            foreach (ArtifactFragment item in inventory.collectedItems)
             {
-                if (i < inventory.collectedItems.Count)
-                {
-                    ArtifactFragment currentItem = inventory.collectedItems[i];
+                if (item == null) continue;
+                if (slotIndex >= puzzlePieces.Length) break;
 
-                    // SYNC DATA
-                    puzzlePieces[i].fragmentData = currentItem;
+                string gameObjectName = item.gameObject.name;
+                Debug.Log($"🔍 Processing GameObject: {gameObjectName}");
 
-                    // ==========================================
-                    // 🔥 THE FIX: Turn the slot ON *before* spawning!
-                    // This allows the visibility Coroutine to run perfectly.
-                    // ==========================================
-                    puzzlePieces[i].gameObject.SetActive(true);
+                Transform targetSnapPoint = null;
 
-                    // NOW we can safely spawn the 3D model
-                    puzzlePieces[i].Spawn3DModel(currentItem.artifactPrefab);
-
-                    // We only extract the clean name you wrote in the Inspector
-                    string fragName = currentItem.fragmentName;
-
-                    // ==========================================
-                    // 🔥 THE AI FIX: Ignore the 3D model name completely!
-                    // By ignoring "modelName", we stop the computer from reading 
-                    // random AI gibberish like "tripo_node_5dac3694".
-                    // ==========================================
-                    if (fragName.Contains("1"))
-                        puzzlePieces[i].correctSnapPoint = snapPoint1;
-                    else if (fragName.Contains("2"))
-                        puzzlePieces[i].correctSnapPoint = snapPoint2;
-                    else if (fragName.Contains("3"))
-                        puzzlePieces[i].correctSnapPoint = snapPoint3;
-                    else if (fragName.Contains("4"))
-                        puzzlePieces[i].correctSnapPoint = snapPoint4;
-                }
+                if (gameObjectName.Contains("1")) targetSnapPoint = snapPoint1;
+                else if (gameObjectName.Contains("2")) targetSnapPoint = snapPoint2;
+                else if (gameObjectName.Contains("3")) targetSnapPoint = snapPoint3;
+                else if (gameObjectName.Contains("4")) targetSnapPoint = snapPoint4;
                 else
                 {
-                    // If the player doesn't have an item for this slot, keep it hidden
-                    puzzlePieces[i].gameObject.SetActive(false);
+                    Debug.LogWarning($"⚠️ Could not determine number from GameObject: {gameObjectName}");
+                    continue;
                 }
+
+                if (targetSnapPoint == null)
+                {
+                    Debug.LogWarning($"⚠️ Target snap point is null for: {gameObjectName}");
+                    continue;
+                }
+
+                PuzzlePiece3D piece = puzzlePieces[slotIndex];
+                piece.fragmentData = item;
+                piece.correctSnapPoint = targetSnapPoint;
+                piece.gameObject.SetActive(true);
+                piece.Spawn3DModel(item.artifactPrefab);
+
+                Debug.Log($"✅ Assigned '{gameObjectName}' to slot {slotIndex + 1} with snap point {targetSnapPoint.name}");
+
+                slotIndex++;
             }
+        }
+        else
+        {
+            Debug.LogWarning("⚠️ No inventory items found!");
         }
     }
 
-    // ==========================================
-    // 🖱️ INSPECTION TRIGGER
-    // ==========================================
     public void InspectFragment(ArtifactFragment data)
     {
         if (data == null) return;
 
         if (inspectPanel != null) inspectPanel.SetActive(true);
 
-        if (inspectIcon != null)
+        if (inspectIcon != null && data.inventoryIcon != null)
         {
             inspectIcon.sprite = data.inventoryIcon;
             inspectIcon.enabled = true;
@@ -162,83 +205,192 @@ public class PuzzleManager : MonoBehaviour
         if (inspectDesc != null) inspectDesc.text = data.descriptionText;
     }
 
-    // ==========================================
-    // 🧩 PUZZLE LOGIC & NEW WIN/FAIL GRADER
-    // ==========================================
     public void CheckWinCondition()
     {
-        snappedCount = 0;
-        int correctPositionCount = 0; // Track how many are in the right spot
+        if (isEndTriggered) return;
 
-        // 1. First, check the board to see what the player did
+        snappedCount = 0;
+        int correctPositionCount = 0;
+
+        Debug.Log("🔍 Checking win condition...");
+
         foreach (PuzzlePiece3D piece in puzzlePieces)
         {
+            if (piece == null) continue;
+
             if (piece.isSnapped)
             {
                 snappedCount++;
 
-                // ==========================================
-                // 🔍 THE DETECTIVE LOG: Prints the grading rubric to your console!
-                // ==========================================
-                Debug.Log("🔍 GRADING LOG: [" + piece.gameObject.name + "] was placed in [" + piece.currentSnapPoint.name + "] | Computer expects: [" + piece.correctSnapPoint.name + "]");
-
-                // Compare where they placed it vs. where it actually belongs!
-                if (piece.currentSnapPoint == piece.correctSnapPoint)
+                if (piece.correctSnapPoint == null)
                 {
-                    correctPositionCount++;
+                    Debug.LogWarning($"⚠️ {piece.gameObject.name} has no correctSnapPoint!");
+                    continue;
                 }
+
+                Debug.Log($"🔍 GRADING: [{piece.gameObject.name}] placed in [{piece.currentSnapPoint?.name}] | Expects: [{piece.correctSnapPoint?.name}]");
+
+                if (piece.currentSnapPoint == piece.correctSnapPoint)
+                    correctPositionCount++;
             }
         }
 
-        // 2. Once all 4 pieces are placed somewhere on the board...
+        Debug.Log($"📊 Snapped: {snappedCount}/{puzzlePieces.Length}, Correct: {correctPositionCount}/{puzzlePieces.Length}");
+
         if (snappedCount >= puzzlePieces.Length)
         {
             InventoryManager inventory = FindObjectOfType<InventoryManager>();
 
             if (inventory != null)
             {
-                // 🔥 CONDITION 1: Did they bring a Fake item to the table? -> FAIL
-                if (inventory.AreAllFragmentsReal() == false)
+                if (!inventory.AreAllFragmentsReal())
                 {
                     Debug.Log("❌ FAKE FRAGMENT DETECTED! Mission Failed!");
-                    onPuzzleFailed.Invoke();
+                    TriggerEndDialogue(false);
                 }
-                // 🔥 CONDITION 2: Items are real, but put in the WRONG holes! -> FAIL
                 else if (correctPositionCount < puzzlePieces.Length)
                 {
                     Debug.Log("❌ REAL FRAGMENTS, BUT WRONG POSITIONS! Mission Failed!");
-                    onPuzzleFailed.Invoke();
+                    TriggerEndDialogue(false);
                 }
-                // 🔥 CONDITION 3: All items real, and placed perfectly! -> WIN
                 else
                 {
                     Debug.Log("🎉 Diorama Restored perfectly! Puzzle Complete!");
-                    onPuzzleComplete.Invoke();
+                    TriggerEndDialogue(true);
                 }
             }
             else
             {
                 Debug.LogWarning("No InventoryManager found, defaulting to Win.");
-                onPuzzleComplete.Invoke();
+                TriggerEndDialogue(true);
             }
         }
     }
 
-    // ==========================================
-    // 🔁 BUTTON FUNCTIONS
-    // ==========================================
+    private void TriggerEndDialogue(bool isSuccess)
+    {
+        if (isEndTriggered) return;
+        isEndTriggered = true;
+
+        Debug.Log($"🎬 TriggerEndDialogue called. isSuccess: {isSuccess}");
+
+        // Hide puzzle UI and container
+        if (puzzleUIPanel != null) puzzleUIPanel.SetActive(false);
+        if (puzzle3DContainer != null) puzzle3DContainer.SetActive(false);
+        if (artifactContainer != null) artifactContainer.gameObject.SetActive(false);
+        if (missionFailedPanel != null) missionFailedPanel.SetActive(false);
+
+        if (dialogueManager == null)
+        {
+            Debug.LogWarning("⚠️ No DialogueManager! Showing panel directly.");
+            if (isSuccess && successPanel != null) 
+            {
+                successPanel.SetActive(true);
+                Debug.Log($"✅ Success panel opened directly: {successPanel.name}");
+            }
+            else if (!isSuccess && failPanel != null) 
+            {
+                failPanel.SetActive(true);
+                Debug.Log($"✅ Fail panel opened directly: {failPanel.name}");
+            }
+            return;
+        }
+
+        // 🔥 Clear any existing callbacks FIRST
+        dialogueManager.ClearCallback();
+
+        if (isSuccess)
+        {
+            Debug.Log("🎉 Triggering success dialogue with callback.");
+
+            if (successDialogue == null || successDialogue.Length == 0)
+            {
+                Debug.LogError("❌ successDialogue is empty!");
+                if (successPanel != null) successPanel.SetActive(true);
+                return;
+            }
+
+            // 🔥 Store panel reference in local variable for callback
+            GameObject successPanelRef = successPanel;
+
+            dialogueManager.StartDialogueWithCallback(successDialogue, () =>
+            {
+                Debug.Log("✅ SUCCESS CALLBACK FIRED! Opening success panel.");
+                if (successPanelRef != null)
+                {
+                    successPanelRef.SetActive(true);
+                    Debug.Log($"✅ Success panel opened: {successPanelRef.name}");
+                }
+                else
+                {
+                    Debug.LogError("❌ Success panel is NULL!");
+                }
+            });
+        }
+        else
+        {
+            Debug.Log("❌ Triggering fail dialogue with callback.");
+
+            if (failDialogue == null || failDialogue.Length == 0)
+            {
+                Debug.LogError("❌ failDialogue is empty!");
+                if (failPanel != null) failPanel.SetActive(true);
+                return;
+            }
+
+            // 🔥 Store panel reference in local variable for callback
+            GameObject failPanelRef = failPanel;
+
+            dialogueManager.StartDialogueWithCallback(failDialogue, () =>
+            {
+                Debug.Log("✅ FAIL CALLBACK FIRED! Opening fail panel.");
+                if (failPanelRef != null)
+                {
+                    failPanelRef.SetActive(true);
+                    Debug.Log($"✅ Fail panel opened: {failPanelRef.name}");
+                }
+                else
+                {
+                    Debug.LogError("❌ Fail panel is NULL!");
+                }
+            });
+        }
+    }
+
     public void ResetPuzzle()
     {
+        Debug.Log("🔄 Resetting puzzle...");
+        isEndTriggered = false;
+
+        if (artifactContainer != null) artifactContainer.gameObject.SetActive(true);
+
         foreach (PuzzlePiece3D piece in puzzlePieces)
         {
-            piece.ResetPosition();
+            if (piece != null)
+            {
+                if (artifactContainer != null && piece.transform.parent == artifactContainer)
+                    piece.transform.SetParent(artifactContainer.parent);
+
+                piece.ResetPosition();
+            }
         }
+        
+        if (successPanel != null) successPanel.SetActive(false);
+        if (failPanel != null) failPanel.SetActive(false);
+        if (missionFailedPanel != null) missionFailedPanel.SetActive(false);
     }
 
     public void ExitPuzzle()
     {
+        Debug.Log("🚪 Exiting puzzle...");
+        isEndTriggered = false;
+
         if (puzzleUIPanel != null) puzzleUIPanel.SetActive(false);
         if (puzzle3DContainer != null) puzzle3DContainer.SetActive(false);
+        if (artifactContainer != null) artifactContainer.gameObject.SetActive(false);
+        if (successPanel != null) successPanel.SetActive(false);
+        if (failPanel != null) failPanel.SetActive(false);
+        if (missionFailedPanel != null) missionFailedPanel.SetActive(false);
         if (inGamePanel != null) inGamePanel.SetActive(true);
     }
 

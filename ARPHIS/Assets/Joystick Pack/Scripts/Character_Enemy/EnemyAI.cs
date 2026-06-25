@@ -1,5 +1,5 @@
 using UnityEngine;
-using UnityEngine.AI; // Required for pathfinding
+using UnityEngine.AI;
 
 public class EnemyAI : MonoBehaviour
 {
@@ -9,55 +9,77 @@ public class EnemyAI : MonoBehaviour
 
     [Header("Targeting & Ranges")]
     public Transform player;
-    public float detectionRange = 10f; // How close player needs to be to trigger chase
-    private float attackRange; // Changes automatically based on weapon
+    public float detectionRange = 10f;
+    private float attackRange;
 
     [Header("Combat Stats")]
     public float timeBetweenAttacks = 1.5f;
     private float lastAttackTime;
 
+    [Header("Coin Reward")]
+    public int coinReward = 5; // 🔥 ONLY PLACE FOR COIN REWARD
+
     private NavMeshAgent agent;
+    private CharacterHealth health; // Reference to the enemy's health
 
     [Header("Animation Setup")]
-    public Animator enemyAnim; // Drag your Enemy's Animator here in the Inspector!
+    public Animator enemyAnim;
 
     void Start()
     {
         agent = GetComponent<NavMeshAgent>();
+        health = GetComponent<CharacterHealth>(); // Get health component
 
-        // Auto-find the player if you forget to drag them into the slot
+        // 🔥 SUBSCRIBE TO DEATH EVENT
+        if (health != null)
+        {
+            health.OnDeath += OnEnemyDeath;
+        }
+
         if (player == null) player = GameObject.FindGameObjectWithTag("Player").transform;
 
-        // INCREASED THESE NUMBERS to account for the Enemy's 3x Scale!
+        // Set attack range based on weapon
         if (weaponType == EnemyWeapon.Pistol) attackRange = 15f;
         else if (weaponType == EnemyWeapon.Knife) attackRange = 3.5f;
-        else attackRange = 2.5f; // Bumped Punch up to 2.5 meters
+        else attackRange = 2.5f;
 
-        // Tell the AI to hit the brakes right before it crashes into the player
         agent.stoppingDistance = attackRange - 0.2f;
+    }
+
+    // 🔥 THIS IS CALLED WHEN THE ENEMY DIES
+    private void OnEnemyDeath()
+    {
+        // Award coins when enemy dies
+        AwardCoins();
+        
+        // Unsubscribe to prevent memory leaks
+        if (health != null)
+        {
+            health.OnDeath -= OnEnemyDeath;
+        }
     }
 
     void Update()
     {
-        // Don't do anything if the player is missing
+        // Check if enemy is dead
+        if (health != null && health.currentHealth <= 0)
+        {
+            agent.isStopped = true;
+            return;
+        }
+
         if (player == null) return;
 
         float distanceToPlayer = Vector3.Distance(transform.position, player.position);
 
-        // Check if player is inside the detection bubble
         if (distanceToPlayer <= detectionRange)
         {
-            // If close enough to attack, stop moving and hit them!
             if (distanceToPlayer <= attackRange)
             {
                 agent.isStopped = true;
-
-                // Look directly at the player while attacking
                 transform.LookAt(new Vector3(player.position.x, transform.position.y, player.position.z));
-
                 Attack();
             }
-            // If too far to attack but inside detection range, chase them!
             else
             {
                 agent.isStopped = false;
@@ -66,14 +88,12 @@ public class EnemyAI : MonoBehaviour
         }
         else
         {
-            // Player ran away, stop chasing
             agent.isStopped = true;
         }
 
-        // --- NEW: RUNNING ANIMATION LOGIC ---
+        // Running animation logic
         if (enemyAnim != null)
         {
-            // If the agent is NOT told to stop, AND is physically moving, set IsRunning to true!
             bool isMoving = !agent.isStopped && agent.velocity.magnitude > 0.1f;
             enemyAnim.SetBool("IsRunning", isMoving);
         }
@@ -83,20 +103,18 @@ public class EnemyAI : MonoBehaviour
     {
         if (Time.time >= lastAttackTime + timeBetweenAttacks)
         {
-            // 1. Tell the Animator to play the correct attack
             if (enemyAnim != null)
             {
                 if (weaponType == EnemyWeapon.Knife)
                 {
-                    enemyAnim.SetTrigger("Knife"); // Plays knife_enemy
+                    enemyAnim.SetTrigger("Knife");
                 }
                 else
                 {
-                    enemyAnim.SetTrigger("Punch"); // Plays punch_enemy
+                    enemyAnim.SetTrigger("Punch");
                 }
             }
 
-            // 2. Deal the damage
             CharacterHealth playerHealth = player.GetComponent<CharacterHealth>();
             if (playerHealth != null)
             {
@@ -105,6 +123,35 @@ public class EnemyAI : MonoBehaviour
             }
 
             lastAttackTime = Time.time;
+        }
+    }
+
+    // ==========================================
+    // 🪙 COIN REWARD SYSTEM (ONLY HERE)
+    // ==========================================
+    public void AwardCoins()
+    {
+        Debug.Log($"🪙 AwardCoins() called on {gameObject.name}");
+        
+        CoinManager coinManager = FindObjectOfType<CoinManager>();
+        
+        if (coinManager != null)
+        {
+            coinManager.AddCoins(coinReward);
+            Debug.Log($"🪙 +{coinReward} coins awarded! Total now: {coinManager.GetTotalCoins()}");
+        }
+        else
+        {
+            Debug.LogWarning("⚠️ CoinManager not found in scene!");
+        }
+    }
+
+    void OnDestroy()
+    {
+        // Clean up event subscription
+        if (health != null)
+        {
+            health.OnDeath -= OnEnemyDeath;
         }
     }
 }
